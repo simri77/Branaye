@@ -4,16 +4,16 @@ import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 
 void main() {
-  runApp(const NoteFlowApp());
+  runApp(const BranayeApp());
 }
 
-class NoteFlowApp extends StatelessWidget {
-  const NoteFlowApp({super.key});
+class BranayeApp extends StatelessWidget {
+  const BranayeApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
-      title: 'NoteFlow',
+      title: 'Branaye',
       theme: AppTheme.light,
       routerConfig: appRouter,
     );

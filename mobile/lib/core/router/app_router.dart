@@ -3,7 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../features/home/home_screen.dart';
 import '../../features/search/search_screen.dart';
-import '../../features/categories/catagories_screen.dart';
+import '../../features/categories/categories_screen.dart';
 import '../../features/settings/settings_screen.dart';
 
 class AppShell extends StatelessWidget {

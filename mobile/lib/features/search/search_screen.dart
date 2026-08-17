@@ -11,7 +11,7 @@ class SearchScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          'NoteFlow',
+          'Branaye',
           style: textTheme.titleLarge?.copyWith(color: colors.primary),
         ),
         backgroundColor: colors.surface,
@@ -29,7 +29,7 @@ class SearchScreen extends StatelessWidget {
               ),
             ),
             Text(
-              'your notes will apear here',
+              'your notes will appear here',
               style: textTheme.bodyMedium?.copyWith(
                 color: colors.onSurfaceVariant,
               ),

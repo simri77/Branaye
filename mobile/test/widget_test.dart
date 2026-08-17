@@ -7,14 +7,14 @@
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:noteflow/main.dart';
+import 'package:branaye/main.dart';
 
 void main() {
   testWidgets('Shell shows home and navigates to search', (
     WidgetTester tester,
   ) async {
     // Build our app and trigger a frame.
-    await tester.pumpWidget(const NoteFlowApp());
+    await tester.pumpWidget(const BranayeApp());
     await tester.pumpAndSettle(); // waits for navigation animations
 
     //Home is shown first

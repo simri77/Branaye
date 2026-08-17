@@ -11,7 +11,7 @@ class SettingsScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          'NoteFlow',
+          'Branaye',
           style: textTheme.titleLarge?.copyWith(color: colors.primary),
         ),
         backgroundColor: colors.surface,
