@@ -1,33 +1,40 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:branaye/main.dart';
 
 void main() {
-  testWidgets('Shell shows home and navigates to search', (
+  testWidgets('Home shows notes from the mock repository', (
     WidgetTester tester,
   ) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const BranayeApp());
-    await tester.pumpAndSettle(); // waits for navigation animations
+    await tester.pumpWidget(const ProviderScope(child: BranayeApp()));
 
-    //Home is shown first
-    expect(find.text('Your notes will appear here'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
 
-    //All four nav destinations are shown
-    expect(find.text('Search'), findsOneWidget);
-    expect(find.text('Categories'), findsOneWidget);
-    expect(find.text('Settings'), findsOneWidget);
+    expect(find.text('Good morning, Alex'), findsOneWidget);
+    expect(find.text('Project Branaye Vision'), findsOneWidget);
+  });
 
-    await tester.tap(find.text('Search')); // taps the nav destination label
-    await tester.pumpAndSettle(); // waits for navigation animations
+  testWidgets('Bottom nav navigates between tabs', (WidgetTester tester) async {
+    await tester.pumpWidget(const ProviderScope(child: BranayeApp()));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
 
-    expect(find.text('Search Screen'), findsOneWidget);
+    await tester.tap(find.text('Search'));
+    await tester.pumpAndSettle();
+    expect(find.text('Search your notes...'), findsOneWidget);
+
+    await tester.tap(find.text('Settings'));
+    await tester.pumpAndSettle();
+    expect(find.text('Settings'), findsWidgets);
+
+    await tester.tap(find.text('Categories'));
+    await tester.pumpAndSettle();
+    expect(find.text('Categories'), findsWidgets);
+
+    await tester.tap(find.text('Home'));
+    await tester.pumpAndSettle();
+    expect(find.text('Good morning, Alex'), findsOneWidget);
   });
 }

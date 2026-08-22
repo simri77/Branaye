@@ -5,6 +5,8 @@ import '../../features/home/home_screen.dart';
 import '../../features/search/search_screen.dart';
 import '../../features/categories/categories_screen.dart';
 import '../../features/settings/settings_screen.dart';
+import '../../features/editor/editor_screen.dart';
+import '../../features/notes/filtered_notes_screen.dart';
 
 class AppShell extends StatelessWidget {
   const AppShell({super.key, required this.child});
@@ -94,6 +96,20 @@ final appRouter = GoRouter(
           ],
         ),
       ],
+    ),
+    GoRoute(
+      path: '/editor',
+      builder: (context, state) => const EditorScreen(),
+    ),
+    GoRoute(
+      path: '/favorites',
+      builder: (context, state) =>
+          const FilteredNotesScreen(mode: FilterMode.favorites),
+    ),
+    GoRoute(
+      path: '/archived',
+      builder: (context, state) =>
+          const FilteredNotesScreen(mode: FilterMode.archived),
     ),
   ],
 );

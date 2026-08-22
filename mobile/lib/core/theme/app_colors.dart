@@ -42,4 +42,16 @@ abstract final class AppColors {
   static const Color noteWashPersonal = Color(0xFFFFF9F0);
   static const Color noteWashStudy = Color(0xFFFCF0FF);
   static const Color noteWashIdeas = Color(0xFFF0FFF4);
+
+  // Dark — deep charcoal, never pure black
+  static const Color darkSurface = Color(0xFF131318);
+  static const Color darkSurfaceLowest = Color(0xFF0E0E11);
+  static const Color darkSurfaceLow = Color(0xFF1B1B20);
+  static const Color darkSurfaceContainer = Color(0xFF1F1F25);
+  static const Color darkSurfaceHigh = Color(0xFF292931);
+  static const Color darkSurfaceHighest = Color(0xFF34343C);
+  static const Color darkOnSurface = Color(0xFFE6E0E9);
+  static const Color darkOnSurfaceVariant = Color(0xFFCAC4D0);
+  static const Color darkOutline = Color(0xFF938F99);
+  static const Color darkOutlineVariant = Color(0xFF49454F);
 }

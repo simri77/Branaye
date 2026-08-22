@@ -1,20 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
+import 'data/providers.dart';
 
 void main() {
-  runApp(const BranayeApp());
+  runApp(const ProviderScope(child: BranayeApp()));
 }
 
-class BranayeApp extends StatelessWidget {
+class BranayeApp extends ConsumerWidget {
   const BranayeApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeMode = ref.watch(themeModeProvider);
     return MaterialApp.router(
       title: 'Branaye',
       theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      themeMode: themeMode,
       routerConfig: appRouter,
     );
   }
