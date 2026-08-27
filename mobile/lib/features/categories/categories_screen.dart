@@ -27,7 +27,7 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
     final colors = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    int selectedIconCodePoint = Icons.folder.codePoint;
+    IconData selectedIcon = Icons.folder;
 
     final iconOptions = [
       Icons.folder,
@@ -66,21 +66,21 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
           ),
           content: SizedBox(
             width: 300,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Choose an icon',
-                  style: textTheme.labelMedium?.copyWith(
-                    color: colors.onSurfaceVariant,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Choose an icon',
+                    style: textTheme.labelMedium?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
                   ),
-                ),
-                const SizedBox(height: AppSpacing.stackSm),
-                SizedBox(
-                  height: 160,
-                  child: GridView.builder(
-                    physics: const BouncingScrollPhysics(),
+                  const SizedBox(height: AppSpacing.stackSm),
+                  GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
                     gridDelegate:
                         const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 6,
@@ -91,10 +91,10 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
                     itemBuilder: (context, index) {
                       final icon = iconOptions[index];
                       final isSelected =
-                          selectedIconCodePoint == icon.codePoint;
+                          selectedIcon == icon;
                       return InkWell(
                         onTap: () => setDialogState(
-                            () => selectedIconCodePoint = icon.codePoint),
+                            () => selectedIcon = icon),
                         borderRadius:
                             BorderRadius.circular(AppRadius.rounded),
                         child: Container(
@@ -122,35 +122,35 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
                       );
                     },
                   ),
-                ),
-                const SizedBox(height: AppSpacing.stackMd),
-                Text(
-                  'Category name',
-                  style: textTheme.labelMedium?.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.stackSm),
-                TextField(
-                  controller: _categoryNameController,
-                  autofocus: true,
-                  style:
-                      textTheme.bodyLarge?.copyWith(color: colors.onSurface),
-                  decoration: InputDecoration(
-                    hintText: 'e.g. Recipes',
-                    hintStyle: textTheme.bodyLarge
-                        ?.copyWith(color: colors.outline),
-                    border: OutlineInputBorder(
-                      borderRadius:
-                          BorderRadius.circular(AppRadius.rounded),
+                  const SizedBox(height: AppSpacing.stackMd),
+                  Text(
+                    'Category name',
+                    style: textTheme.labelMedium?.copyWith(
+                      color: colors.onSurfaceVariant,
                     ),
                   ),
-                  onSubmitted: (_) => _createCategory(
-                    dialogContext,
-                    selectedIconCodePoint,
+                  const SizedBox(height: AppSpacing.stackSm),
+                  TextField(
+                    controller: _categoryNameController,
+                    autofocus: true,
+                    style:
+                        textTheme.bodyLarge?.copyWith(color: colors.onSurface),
+                    decoration: InputDecoration(
+                      hintText: 'e.g. Recipes',
+                      hintStyle: textTheme.bodyLarge
+                          ?.copyWith(color: colors.outline),
+                      border: OutlineInputBorder(
+                        borderRadius:
+                            BorderRadius.circular(AppRadius.rounded),
+                      ),
+                    ),
+                    onSubmitted: (_) => _createCategory(
+                      dialogContext,
+                      selectedIcon,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           actions: [
@@ -161,7 +161,7 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
             FilledButton(
               onPressed: () => _createCategory(
                 dialogContext,
-                selectedIconCodePoint,
+                selectedIcon,
               ),
               child: const Text('Create'),
             ),
@@ -171,11 +171,11 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
     );
   }
 
-  void _createCategory(BuildContext dialogContext, int iconCodePoint) {
+  void _createCategory(BuildContext dialogContext, IconData icon) {
     final name = _categoryNameController.text.trim();
     if (name.isEmpty) return;
     Navigator.pop(dialogContext);
-    ref.read(categoriesProvider.notifier).add(name, iconCodePoint);
+    ref.read(categoriesProvider.notifier).add(name, icon);
   }
 
   @override
@@ -235,7 +235,7 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
             crossAxisCount: 2,
             crossAxisSpacing: AppSpacing.gutter,
             mainAxisSpacing: AppSpacing.gutter,
-            childAspectRatio: 1.2,
+            childAspectRatio: 1.0,
           ),
           itemCount: categoryData.length + 1,
           itemBuilder: (context, index) {
