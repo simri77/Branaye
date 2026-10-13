@@ -13,6 +13,32 @@ class Note {
     this.isArchived = false,
     this.tags = const [],
   });
+
+  factory Note.fromJson(Map<String, dynamic> json) {
+    return Note(
+      id: json['id'] as String,
+      title: json['title'] as String,
+      content: json['content'] as String? ?? '',
+      category: json['category'] as String? ?? 'Ideas',
+      color: _parseColor(json['color'] as String?),
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      isPinned: json['isPinned'] as bool? ?? false,
+      isFavorite: json['isFavorite'] as bool? ?? false,
+      isArchived: json['isArchived'] as bool? ?? false,
+      tags: (json['tags'] as List<dynamic>?)?.map((e) => e as String).toList() ?? [],
+    );
+  }
+
+  static Color _parseColor(String? hex) {
+    if (hex == null) return const Color(0xFF464BD4);
+    final buffer = StringBuffer();
+    if (hex.length == 6 || hex.length == 7) {
+      buffer.write('FF');
+      buffer.write(hex.replaceFirst('#', ''));
+    }
+    return Color(int.parse(buffer.toString(), radix: 16));
+  }
+
   Note copyWith({
     String? title,
     String? content,

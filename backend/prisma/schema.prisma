@@ -1,0 +1,89 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String       @id @default(cuid())
+  email         String       @unique
+  passwordHash  String
+  name          String
+  avatarUrl     String?
+  emailVerified DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  notes         Note[]
+  tags          Tag[]
+  resetTokens   ResetToken[]
+
+  @@map("users")
+}
+
+model Note {
+  id           String    @id @default(cuid())
+  userId       String
+  title        String
+  content      String
+  category     String    @default("Ideas")
+  color        String    @default("#464BD4")
+  isPinned     Boolean   @default(false)
+  isFavorite   Boolean   @default(false)
+  isArchived   Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+  searchVector Unsupported("tsvector")?
+
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tags         NoteTag[]
+
+  @@index([userId, isArchived])
+  @@index([userId, isPinned])
+  @@index([userId, isFavorite])
+  @@index([userId, category])
+  @@index([searchVector], type: Gin)
+  @@map("notes")
+}
+
+model Tag {
+  id     String    @id @default(cuid())
+  userId String
+  name   String
+  color  String?
+
+  user   User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notes  NoteTag[]
+
+  @@unique([userId, name])
+  @@map("tags")
+}
+
+model NoteTag {
+  noteId String
+  tagId  String
+
+  note   Note @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  tag    Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([noteId, tagId])
+  @@map("note_tags")
+}
+
+model ResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("reset_tokens")
+}
