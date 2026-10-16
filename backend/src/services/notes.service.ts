@@ -1,5 +1,4 @@
-import { prisma } from '../db';
-import { Prisma } from '@prisma/client';
+import { prisma, Prisma } from '../db';
 
 export interface ListNotesOptions {
   userId: string;
@@ -30,6 +29,99 @@ function buildSortOrder(sort: string): Prisma.NoteOrderByWithRelationInput {
   return { [field]: direction } as Prisma.NoteOrderByWithRelationInput;
 }
 
+/**
+ * Column names can never be bound as SQL parameters, so the only safe way to
+ * expose a client-controlled ordering is a fixed allow-list. Anything the
+ * client sends that is not a key here falls back to the default column.
+ */
+const SORT_COLUMNS: Record<string, string> = {
+  createdAt: 'n.created_at',
+  updatedAt: 'n.updated_at',
+  title: 'n.title',
+};
+
+const NOTE_DTO_COLUMNS = `
+  n.id, n.user_id AS "userId", n.title, n.content, n.category, n.color,
+  n.is_pinned AS "isPinned", n.is_favorite AS "isFavorite", n.is_archived AS "isArchived",
+  n.created_at AS "createdAt", n.updated_at AS "updatedAt", n.deleted_at AS "deletedAt"
+`;
+
+interface NoteDto {
+  id: string;
+  userId: string;
+  title: string;
+  content: string;
+  category: string;
+  color: string;
+  isPinned: boolean;
+  isFavorite: boolean;
+  isArchived: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  deletedAt: Date | null;
+  tags: string[];
+}
+
+/**
+ * The `q` branch needs raw SQL because `searchVector` is an
+ * Unsupported("tsvector") column the Prisma client cannot filter on.
+ * Every client-supplied value goes through `Prisma.sql` placeholders ($1, $2…)
+ * so it is bound, never concatenated — see the sort allow-list for the one
+ * thing that cannot be bound.
+ */
+function buildSearchWhere(options: ListNotesOptions): Prisma.Sql {
+  const conditions: Prisma.Sql[] = [
+    Prisma.sql`n.user_id = ${options.userId}`,
+    Prisma.sql`n.deleted_at IS NULL`,
+  ];
+
+  if (!options.includeArchived) {
+    conditions.push(Prisma.sql`n.is_archived = false`);
+  } else if (options.isArchived !== undefined) {
+    conditions.push(Prisma.sql`n.is_archived = ${options.isArchived}`);
+  }
+
+  if (options.isPinned !== undefined) {
+    conditions.push(Prisma.sql`n.is_pinned = ${options.isPinned}`);
+  }
+  if (options.isFavorite !== undefined) {
+    conditions.push(Prisma.sql`n.is_favorite = ${options.isFavorite}`);
+  }
+  if (options.category) {
+    conditions.push(Prisma.sql`n.category = ${options.category}`);
+  }
+  if (options.tags && options.tags.length > 0) {
+    conditions.push(Prisma.sql`
+      EXISTS (
+        SELECT 1
+        FROM note_tags nt
+        JOIN tags t ON nt.tag_id = t.id
+        WHERE nt.note_id = n.id AND t.name IN (${Prisma.join(options.tags)})
+      )
+    `);
+  }
+
+  return Prisma.join(conditions, ' AND ');
+}
+
+async function attachTags(notes: NoteDto[]): Promise<NoteDto[]> {
+  if (notes.length === 0) return notes;
+
+  const links = await prisma.noteTag.findMany({
+    where: { noteId: { in: notes.map(note => note.id) } },
+    include: { tag: true },
+  });
+
+  const tagsByNote = new Map<string, string[]>();
+  for (const link of links) {
+    const names = tagsByNote.get(link.noteId) ?? [];
+    names.push(link.tag.name);
+    tagsByNote.set(link.noteId, names);
+  }
+
+  return notes.map(note => ({ ...note, tags: tagsByNote.get(note.id) ?? [] }));
+}
+
 function buildWhereClause(options: ListNotesOptions): Prisma.NoteWhereInput {
   const where: Prisma.NoteWhereInput = {
     userId: options.userId,
@@ -46,12 +138,9 @@ function buildWhereClause(options: ListNotesOptions): Prisma.NoteWhereInput {
   if (options.isFavorite !== undefined) where.isFavorite = options.isFavorite;
   if (options.category) where.category = options.category;
 
-  if (options.q) {
-    where.searchVector = {
-      // Using Prisma's raw query for tsvector search
-      // This will be handled in the raw query below
-    };
-  }
+  // `q` is not applied here: `searchVector` is an Unsupported("tsvector") column,
+  // so it cannot be filtered through the Prisma client. listNotes() routes `q`
+  // through a raw SQL query instead.
 
   if (options.tags && options.tags.length > 0) {
     where.tags = {
@@ -73,59 +162,38 @@ export async function listNotes(options: ListNotesOptions): Promise<PaginatedRes
   // Build base where clause
   const where = buildWhereClause(options);
 
-  let notes: any[];
+  let notes: NoteDto[];
   let total: number;
 
   if (q) {
-    // Use raw query for full-text search with ranking
-    const searchQuery = `
-      SELECT n.*, 
-        ts_rank_cd(n.search_vector, plainto_tsquery('english', $1)) as rank
+    const searchWhere = buildSearchWhere(options);
+
+    const [field, direction] = sort.split(':');
+    const column = SORT_COLUMNS[field] ?? SORT_COLUMNS.createdAt;
+    const order = direction === 'asc' ? 'ASC' : 'DESC';
+
+    const searchSql = Prisma.sql`
+      SELECT ${Prisma.raw(NOTE_DTO_COLUMNS)},
+        ts_rank_cd(n.search_vector, plainto_tsquery('english', ${q})) AS rank
       FROM notes n
-      WHERE n.user_id = $2
-        AND n.deleted_at IS NULL
-        ${!options.includeArchived ? 'AND n.is_archived = false' : ''}
-        ${options.isPinned !== undefined ? `AND n.is_pinned = ${options.isPinned}` : ''}
-        ${options.isFavorite !== undefined ? `AND n.is_favorite = ${options.isFavorite}` : ''}
-        ${options.category ? `AND n.category = '${options.category}'` : ''}
-        ${options.tags && options.tags.length > 0 ? `
-          AND EXISTS (
-            SELECT 1 FROM note_tags nt
-            JOIN tags t ON nt.tag_id = t.id
-            WHERE nt.note_id = n.id AND t.name IN (${options.tags.map(t => `'${t}'`).join(',')})
-          )
-        ` : ''}
-        AND n.search_vector @@ plainto_tsquery('english', $1)
-      ORDER BY rank DESC, n.${sort.split(':')[0]} ${sort.split(':')[1].toUpperCase()}
-      LIMIT $3 OFFSET $4
+      WHERE ${searchWhere} AND n.search_vector @@ plainto_tsquery('english', ${q})
+      ORDER BY rank DESC, ${Prisma.raw(`${column} ${order}`)}
+      LIMIT ${limit} OFFSET ${skip}
     `;
 
-    const countQuery = `
-      SELECT COUNT(*) 
+    const countSql = Prisma.sql`
+      SELECT COUNT(*)::int AS count
       FROM notes n
-      WHERE n.user_id = $1
-        AND n.deleted_at IS NULL
-        ${!options.includeArchived ? 'AND n.is_archived = false' : ''}
-        ${options.isPinned !== undefined ? `AND n.is_pinned = ${options.isPinned}` : ''}
-        ${options.isFavorite !== undefined ? `AND n.is_favorite = ${options.isFavorite}` : ''}
-        ${options.category ? `AND n.category = '${options.category}'` : ''}
-        ${options.tags && options.tags.length > 0 ? `
-          AND EXISTS (
-            SELECT 1 FROM note_tags nt
-            JOIN tags t ON nt.tag_id = t.id
-            WHERE nt.note_id = n.id AND t.name IN (${options.tags.map(t => `'${t}'`).join(',')})
-          )
-        ` : ''}
-        AND n.search_vector @@ plainto_tsquery('english', $2)
+      WHERE ${searchWhere} AND n.search_vector @@ plainto_tsquery('english', ${q})
     `;
 
-    const [notesResult, countResult] = await Promise.all([
-      prisma.$queryRawUnsafe(searchQuery, q, userId, limit, skip),
-      prisma.$queryRawUnsafe(countQuery, userId, q),
+    const [rows, countRows] = await Promise.all([
+      prisma.$queryRaw<NoteDto[]>(searchSql),
+      prisma.$queryRaw<{ count: number }[]>(countSql),
     ]);
 
-    notes = notesResult as any[];
-    total = Number((countResult as any[])[0]?.count || 0);
+    notes = await attachTags(rows);
+    total = countRows[0]?.count ?? 0;
   } else {
     // Regular query without search
     const [notesResult, totalResult] = await Promise.all([
@@ -145,15 +213,15 @@ export async function listNotes(options: ListNotesOptions): Promise<PaginatedRes
       prisma.note.count({ where }),
     ]);
 
-    notes = notesResult;
+    notes = notesResult.map(note => ({
+      ...note,
+      tags: note.tags.map(nt => nt.tag.name),
+    }));
     total = totalResult;
   }
 
   return {
-    data: notes.map(note => ({
-      ...note,
-      tags: note.tags.map((nt: any) => nt.tag.name),
-    })),
+    data: notes,
     meta: {
       page,
       limit,

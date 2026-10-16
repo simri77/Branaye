@@ -48,8 +48,6 @@ const options: swaggerJsdoc.Options = {
             name: { type: 'string', maxLength: 50 },
             color: { type: 'string', pattern: '^#[0-9A-Fa-f]{6}$', nullable: true },
             noteCount: { type: 'integer' },
-            createdAt: { type: 'string', format: 'date-time' },
-            updatedAt: { type: 'string', format: 'date-time' },
           },
         },
         PaginatedNotes: {

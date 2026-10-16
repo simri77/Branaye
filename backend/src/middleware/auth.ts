@@ -1,14 +1,19 @@
 import { Request, Response, NextFunction } from 'express';
+import { verifyAccessToken } from '../config/jwt';
 
 export const authMiddleware = (req: Request, _res: Response, next: NextFunction) => {
-  // TODO: Replace with JWT validation
-  // For now, accept userId from header (for development/testing)
-  const userId = req.headers['x-user-id'] as string;
-  
-  if (userId) {
-    (req as any).userId = userId;
+  const header = req.headers.authorization;
+
+  if (header?.startsWith('Bearer ')) {
+    try {
+      const payload = verifyAccessToken(header.slice('Bearer '.length));
+      (req as any).userId = payload.sub;
+    } catch {
+      // Invalid or expired token: leave userId unset.
+      // requireAuth owns the 401 response so there is a single rejection path.
+    }
   }
-  
+
   next();
 };
 

@@ -5,11 +5,19 @@ import notesRoute from '../notes.route';
 import { prisma } from '../../db';
 import { setupTestApp } from './setup';
 
+vi.mock('../../middleware/auth', () => ({
+  authMiddleware: (req: any, _res: any, next: any) => {
+    req.userId = 'test-user-id';
+    next();
+  },
+  requireAuth: (_req: any, _res: any, next: any) => next(),
+}));
+
 describe('Notes Routes', () => {
   let app: express.Express;
 
   beforeEach(() => {
-    app = setupTestApp(notesRoute);
+    app = setupTestApp(notesRoute, '/api/notes');
     vi.clearAllMocks();
   });
 
@@ -57,13 +65,61 @@ describe('Notes Routes', () => {
     });
 
     it('searches with q parameter', async () => {
-      (prisma.$queryRawUnsafe as any)
+      (prisma.$queryRaw as any)
         .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([{ count: '0' }]);
+        .mockResolvedValueOnce([{ count: 0 }]);
 
       await request(app).get('/api/notes?q=search+term');
 
-      expect(prisma.$queryRawUnsafe).toHaveBeenCalled();
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
+      expect(prisma.note.findMany).not.toHaveBeenCalled();
+    });
+
+    it('returns search hits with the same shape as the list endpoint', async () => {
+      (prisma.$queryRaw as any)
+        .mockResolvedValueOnce([
+          {
+            id: 'note1',
+            userId: 'test-user-id',
+            title: 'Database Notes',
+            content: 'Postgres full text search',
+            category: 'Study',
+            color: '#464BD4',
+            isPinned: false,
+            isFavorite: false,
+            isArchived: false,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            deletedAt: null,
+          },
+        ])
+        .mockResolvedValueOnce([{ count: 1 }]);
+      (prisma.noteTag.findMany as any).mockResolvedValue([
+        { noteId: 'note1', tag: { id: 'tag1', name: 'postgres' } },
+      ]);
+
+      const response = await request(app).get('/api/notes?q=database');
+
+      expect(response.status).toBe(200);
+      expect(response.body.data[0].title).toBe('Database Notes');
+      expect(response.body.data[0].tags).toEqual(['postgres']);
+      expect(response.body.meta.total).toBe(1);
+    });
+
+    it('binds user input as parameters instead of interpolating it into SQL', async () => {
+      (prisma.$queryRaw as any)
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ count: 0 }]);
+
+      const injection = "x'); DROP TABLE notes;--";
+      await request(app).get('/api/notes').query({ q: 'term', tags: injection });
+
+      expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
+
+      const [searchSql] = (prisma.$queryRaw as any).mock.calls[0];
+      expect(searchSql.values).toContain(injection);
+      expect(searchSql.sql).not.toContain('DROP TABLE');
+      expect(searchSql.sql).toContain('?');
     });
 
     it('filters by tags', async () => {
@@ -81,14 +137,8 @@ describe('Notes Routes', () => {
       );
     });
 
-    it('returns 401 without auth', async () => {
-      const appWithoutAuth = express();
-      appWithoutAuth.use(express.json());
-      appWithoutAuth.use('/api/notes', notesRoute);
-
-      const response = await request(appWithoutAuth).get('/api/notes');
-      expect(response.status).toBe(401);
-    });
+    // The "rejects requests without a token" case lives in auth.route.test.ts:
+    // this file stubs the auth middleware, so the real 401 path cannot be observed here.
   });
 
   describe('GET /api/notes/:id', () => {
@@ -110,7 +160,7 @@ describe('Notes Routes', () => {
 
       (prisma.note.findFirst as any).mockResolvedValue(mockNote);
 
-      const response = await request(app).get('/api/notes/note1');
+      const response = await request(app).get('/api/notes/cnote0001');
 
       expect(response.status).toBe(200);
       expect(response.body.title).toBe('Test Note');
@@ -119,7 +169,7 @@ describe('Notes Routes', () => {
     it('returns 404 for non-existent note', async () => {
       (prisma.note.findFirst as any).mockResolvedValue(null);
 
-      const response = await request(app).get('/api/notes/nonexistent');
+      const response = await request(app).get('/api/notes/cnotfound000');
 
       expect(response.status).toBe(404);
     });
@@ -185,7 +235,7 @@ describe('Notes Routes', () => {
       (prisma.note.update as any).mockResolvedValue(mockNote);
 
       const response = await request(app)
-        .patch('/api/notes/note1')
+        .patch('/api/notes/cnote0001')
         .send({ title: 'Updated', isPinned: true });
 
       expect(response.status).toBe(200);
@@ -194,6 +244,21 @@ describe('Notes Routes', () => {
     });
 
     it('replaces tags when provided', async () => {
+      const mockNote = {
+        id: 'note1',
+        userId: 'test-user-id',
+        title: 'Updated',
+        content: 'Content',
+        category: 'Ideas',
+        color: '#464BD4',
+        isPinned: false,
+        isFavorite: false,
+        isArchived: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        tags: [],
+      };
+
       (prisma.note.findFirst as any).mockResolvedValue({ id: 'note1', userId: 'test-user-id' });
       (prisma.tag.findUnique as any).mockResolvedValue({ id: 'tag2', name: 'tag2' });
       (prisma.noteTag.deleteMany as any).mockResolvedValue({});
@@ -204,7 +269,7 @@ describe('Notes Routes', () => {
       });
 
       const response = await request(app)
-        .patch('/api/notes/note1')
+        .patch('/api/notes/cnote0001')
         .send({ tags: ['tag2'] });
 
       expect(response.status).toBe(200);
@@ -215,7 +280,7 @@ describe('Notes Routes', () => {
     it('deletes note', async () => {
       (prisma.note.deleteMany as any).mockResolvedValue({ count: 1 });
 
-      const response = await request(app).delete('/api/notes/note1');
+      const response = await request(app).delete('/api/notes/cnote0001');
 
       expect(response.status).toBe(204);
     });
@@ -223,8 +288,70 @@ describe('Notes Routes', () => {
     it('returns 404 for non-existent note', async () => {
       (prisma.note.deleteMany as any).mockResolvedValue({ count: 0 });
 
-      const response = await request(app).delete('/api/notes/nonexistent');
+      const response = await request(app).delete('/api/notes/cnotfound000');
 
+      expect(response.status).toBe(404);
+    });
+  });
+
+  // Cross-user denial is implemented by *scoping every query to req.userId*.
+  // With a mocked Prisma there is no second user to log in as, so instead we
+  // assert the scope: if `userId` is always in the WHERE clause, another user's
+  // note id can never match, and the row behaves as if it does not exist.
+  describe('ownership scoping', () => {
+    it("lists only the caller's notes", async () => {
+      (prisma.note.findMany as any).mockResolvedValue([]);
+      (prisma.note.count as any).mockResolvedValue(0);
+
+      await request(app).get('/api/notes');
+
+      expect(prisma.note.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ userId: 'test-user-id' }),
+        })
+      );
+      expect(prisma.note.count).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ userId: 'test-user-id' }),
+        })
+      );
+    });
+
+    it('scopes a single-note read to the caller and 404s when it is not theirs', async () => {
+      (prisma.note.findFirst as any).mockResolvedValue(null);
+
+      const response = await request(app).get('/api/notes/cnote0001');
+
+      expect(prisma.note.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: 'cnote0001', userId: 'test-user-id' }),
+        })
+      );
+      expect(response.status).toBe(404);
+    });
+
+    it("cannot update a note that is not the caller's", async () => {
+      (prisma.note.findFirst as any).mockResolvedValue(null);
+
+      const response = await request(app).patch('/api/notes/cnote0001').send({ title: 'Hijacked' });
+
+      expect(prisma.note.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: 'cnote0001', userId: 'test-user-id' }),
+        })
+      );
+      expect(prisma.note.update).not.toHaveBeenCalled();
+      expect(response.status).toBe(404);
+    });
+
+    it("cannot delete a note that is not the caller's", async () => {
+      (prisma.note.deleteMany as any).mockResolvedValue({ count: 0 });
+
+      const response = await request(app).delete('/api/notes/cnote0001');
+
+      expect(prisma.note.deleteMany).toHaveBeenCalledWith({
+        where: { id: 'cnote0001', userId: 'test-user-id' },
+      });
       expect(response.status).toBe(404);
     });
   });

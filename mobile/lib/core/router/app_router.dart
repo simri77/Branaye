@@ -25,8 +25,6 @@ import '../../features/auth/login_screen.dart';
 import '../../features/auth/register_screen.dart';
 import '../../data/providers.dart';
 
-final authRefreshNotifier = ValueNotifier<int>(0);
-
 final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: '/',

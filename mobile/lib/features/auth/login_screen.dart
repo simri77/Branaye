@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/router/app_router.dart';
 import '../../core/theme/app_typography.dart';
 import '../../data/providers.dart';
 
@@ -18,6 +17,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
+  bool _isSubmitting = false;
 
   @override
   void dispose() {
@@ -26,14 +26,25 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     super.dispose();
   }
 
-  void _handleLogin() {
-    if (_formKey.currentState!.validate()) {
-      ref.read(authProvider.notifier).login(
-            _emailController.text,
-            _passwordController.text,
-          );
-      authRefreshNotifier.value++;
-    }
+  Future<void> _handleLogin() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isSubmitting = true);
+    final success = await ref.read(authProvider.notifier).login(
+          _emailController.text.trim(),
+          _passwordController.text,
+        );
+
+    if (!mounted) return;
+    setState(() => _isSubmitting = false);
+
+    if (success) return; // the router guard moves us to the home shell
+
+    final message =
+        ref.read(authProvider).errorMessage ?? 'Login failed. Please try again.';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 
   @override
@@ -171,7 +182,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           SizedBox(
                             width: double.infinity,
                             child: FilledButton(
-                              onPressed: _handleLogin,
+                              onPressed: _isSubmitting ? null : _handleLogin,
                               style: FilledButton.styleFrom(
                                 backgroundColor: colors.primary,
                                 foregroundColor: colors.onPrimary,
@@ -191,18 +202,29 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  Text(
-                                    'Login',
-                                    style: textTheme.titleMedium?.copyWith(
+                                  if (_isSubmitting)
+                                    SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: colors.onPrimary,
+                                      ),
+                                    )
+                                  else ...[
+                                    Text(
+                                      'Login',
+                                      style: textTheme.titleMedium?.copyWith(
+                                        color: colors.onPrimary,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Icon(
+                                      Icons.arrow_forward,
+                                      size: 18,
                                       color: colors.onPrimary,
                                     ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Icon(
-                                    Icons.arrow_forward,
-                                    size: 18,
-                                    color: colors.onPrimary,
-                                  ),
+                                  ],
                                 ],
                               ),
                             ),

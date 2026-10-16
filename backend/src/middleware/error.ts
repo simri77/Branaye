@@ -1,6 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 import { ZodError } from 'zod';
-import { Prisma } from '@prisma/client';
 
 export class AppError extends Error {
   constructor(
@@ -28,16 +27,18 @@ export const errorHandler = (
     });
   }
 
-  if (err instanceof Prisma.PrismaClientKnownRequestError) {
-    if (err.code === 'P2002') {
-      return res.status(400).json({
-        error: 'Unique constraint violation',
-        details: err.meta?.target,
-      });
-    }
-    if (err.code === 'P2025') {
-      return res.status(404).json({ error: 'Record not found' });
-    }
+  // Prisma errors are detected by their `code` rather than `instanceof`:
+  // the error class identity is not stable across the generated client, the
+  // adapter package, and mocked modules in tests.
+  const prismaCode = (err as { code?: string }).code;
+  if (prismaCode === 'P2002') {
+    return res.status(400).json({
+      error: 'Unique constraint violation',
+      details: (err as { meta?: unknown }).meta,
+    });
+  }
+  if (prismaCode === 'P2025') {
+    return res.status(404).json({ error: 'Record not found' });
   }
 
   if (err instanceof AppError) {

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/router/app_router.dart';
 import '../../core/theme/app_typography.dart';
 import '../../data/providers.dart';
 
@@ -19,6 +18,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _agreedToTerms = false;
+  bool _isSubmitting = false;
 
   @override
   void dispose() {
@@ -28,15 +28,32 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     super.dispose();
   }
 
-  void _handleRegister() {
-    if (_formKey.currentState!.validate() && _agreedToTerms) {
-      ref.read(authProvider.notifier).register(
-            _nameController.text,
-            _emailController.text,
-            _passwordController.text,
-          );
-      authRefreshNotifier.value++;
+  Future<void> _handleRegister() async {
+    if (!_formKey.currentState!.validate()) return;
+    if (!_agreedToTerms) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please accept the Terms of Service.')),
+      );
+      return;
     }
+
+    setState(() => _isSubmitting = true);
+    final success = await ref.read(authProvider.notifier).register(
+          _nameController.text.trim(),
+          _emailController.text.trim(),
+          _passwordController.text,
+        );
+
+    if (!mounted) return;
+    setState(() => _isSubmitting = false);
+
+    if (success) return; // the router guard moves us to the home shell
+
+    final message = ref.read(authProvider).errorMessage ??
+        'Registration failed. Please try again.';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 
   @override
@@ -218,7 +235,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                           SizedBox(
                             width: double.infinity,
                             child: FilledButton(
-                              onPressed: _agreedToTerms ? _handleRegister : null,
+                              onPressed: (_agreedToTerms && !_isSubmitting)
+                                  ? _handleRegister
+                                  : null,
                               style: FilledButton.styleFrom(
                                 backgroundColor: colors.primary,
                                 foregroundColor: colors.onPrimary,
@@ -236,13 +255,24 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  const Text('Create Account'),
-                                  const SizedBox(width: 8),
-                                  Icon(
-                                    Icons.arrow_forward,
-                                    size: 18,
-                                    color: colors.onPrimary,
-                                  ),
+                                  if (_isSubmitting)
+                                    SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: colors.onPrimary,
+                                      ),
+                                    )
+                                  else ...[
+                                    const Text('Create Account'),
+                                    const SizedBox(width: 8),
+                                    Icon(
+                                      Icons.arrow_forward,
+                                      size: 18,
+                                      color: colors.onPrimary,
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),

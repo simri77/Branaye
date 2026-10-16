@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -5,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/models/note.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_typography.dart';
+import '../../data/api/dio_provider.dart';
 import '../../data/providers.dart';
 
 class EditorScreen extends ConsumerStatefulWidget {
@@ -57,19 +59,41 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
 
     final id = GoRouterState.of(context).uri.queryParameters['id'];
     if (id != null) {
-      final notes = ref.read(notesProvider).value;
-      if (notes != null) {
-        final match = notes.where((n) => n.id == id);
-        if (match.isNotEmpty) {
-          _existingNote = match.first;
-          _titleController.text = _existingNote!.title;
-          _contentController.text = _existingNote!.content;
-          _selectedColor = _existingNote!.color;
-          _selectedCategory = _existingNote!.category;
-          _selectedTags = List.from(_existingNote!.tags);
+      Note? cached;
+      for (final note in ref.read(notesProvider).value ?? const <Note>[]) {
+        if (note.id == id) {
+          cached = note;
+          break;
         }
       }
+      if (cached != null) {
+        _applyNote(cached);
+      } else {
+        _fetchNote(id);
+      }
     }
+  }
+
+  /// Deep links and post-refresh opens may not have the note in memory yet.
+  Future<void> _fetchNote(String id) async {
+    try {
+      final note = await ref.read(notesRepositoryProvider).getById(id);
+      if (!mounted || note == null) return;
+      _applyNote(note);
+    } catch (error) {
+      _showError(error);
+    }
+  }
+
+  void _applyNote(Note note) {
+    setState(() {
+      _existingNote = note;
+      _titleController.text = note.title;
+      _contentController.text = note.content;
+      _selectedColor = note.color;
+      _selectedCategory = note.category;
+      _selectedTags = List.from(note.tags);
+    });
   }
 
   @override
@@ -80,60 +104,80 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     super.dispose();
   }
 
-  void _save() {
+  bool _isSaving = false;
+
+  void _showError(Object error) {
+    if (!mounted) return;
+    final message = error is DioException
+        ? messageForDioError(error)
+        : 'Something went wrong. Please try again.';
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _save() async {
     final title = _titleController.text.trim();
     final content = _contentController.text.trim();
-    if (title.isEmpty && content.isEmpty) return;
-
-    final now = DateTime.now();
-
-    if (_existingNote != null) {
-      final updated = _existingNote!.copyWith(
-        title: title.isEmpty ? 'Untitled' : title,
-        content: content,
-        category: _selectedCategory,
-        color: _selectedColor,
-        tags: _selectedTags,
-      );
-      ref.read(notesProvider.notifier).updateNote(updated);
-    } else {
-      final note = Note(
-        id: now.millisecondsSinceEpoch.toString(),
-        title: title.isEmpty ? 'Untitled' : title,
-        content: content,
-        category: _selectedCategory,
-        color: _selectedColor,
-        createdAt: now,
-        tags: _selectedTags,
-      );
-      ref.read(notesProvider.notifier).addNote(note);
+    if (title.isEmpty && content.isEmpty) {
+      context.pop();
+      return;
     }
-    context.pop();
-  }
 
-  void _togglePin() {
-    if (_existingNote != null) {
-      ref.read(notesProvider.notifier).updateNote(
-            _existingNote!.copyWith(isPinned: !_existingNote!.isPinned),
-          );
-      setState(() {
-        _existingNote = _existingNote!.copyWith(
-          isPinned: !_existingNote!.isPinned,
+    setState(() => _isSaving = true);
+
+    try {
+      if (_existingNote != null) {
+        final updated = _existingNote!.copyWith(
+          title: title.isEmpty ? 'Untitled' : title,
+          content: content,
+          category: _selectedCategory,
+          color: _selectedColor,
+          tags: _selectedTags,
         );
-      });
+        await ref.read(notesProvider.notifier).updateNote(updated);
+      } else {
+        final note = Note(
+          id: '',
+          title: title.isEmpty ? 'Untitled' : title,
+          content: content,
+          category: _selectedCategory,
+          color: _selectedColor,
+          createdAt: DateTime.now(),
+          tags: _selectedTags,
+        );
+        await ref.read(notesProvider.notifier).addNote(note);
+      }
+      if (!mounted) return;
+      context.pop();
+    } catch (error) {
+      _showError(error);
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
-  void _toggleFavorite() {
-    if (_existingNote != null) {
-      ref.read(notesProvider.notifier).updateNote(
-            _existingNote!.copyWith(isFavorite: !_existingNote!.isFavorite),
-          );
-      setState(() {
-        _existingNote = _existingNote!.copyWith(
-          isFavorite: !_existingNote!.isFavorite,
-        );
-      });
+  Future<void> _togglePin() async {
+    if (_existingNote == null) return;
+    final previous = _existingNote!;
+    final next = previous.copyWith(isPinned: !previous.isPinned);
+    setState(() => _existingNote = next);
+    try {
+      await ref.read(notesProvider.notifier).updateNote(next);
+    } catch (error) {
+      setState(() => _existingNote = previous);
+      _showError(error);
+    }
+  }
+
+  Future<void> _toggleFavorite() async {
+    if (_existingNote == null) return;
+    final previous = _existingNote!;
+    final next = previous.copyWith(isFavorite: !previous.isFavorite);
+    setState(() => _existingNote = next);
+    try {
+      await ref.read(notesProvider.notifier).updateNote(next);
+    } catch (error) {
+      setState(() => _existingNote = previous);
+      _showError(error);
     }
   }
 
@@ -155,63 +199,70 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     final isArchived = _existingNote?.isArchived ?? false;
     showModalBottomSheet(
       context: context,
-      builder: (context) => SafeArea(
+      builder: (sheetContext) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
               leading: Icon(isArchived ? Icons.unarchive : Icons.archive),
               title: Text(isArchived ? 'Unarchive' : 'Archive'),
-              onTap: () {
-                Navigator.pop(context);
-                if (_existingNote != null) {
-                  ref.read(notesProvider.notifier).updateNote(
-                        _existingNote!.copyWith(isArchived: !isArchived),
-                      );
-                  setState(() {
-                    _existingNote = _existingNote!.copyWith(
-                      isArchived: !isArchived,
-                    );
-                  });
+              onTap: () async {
+                Navigator.pop(sheetContext);
+                if (_existingNote == null) return;
+                final next = _existingNote!.copyWith(isArchived: !isArchived);
+                setState(() => _existingNote = next);
+                try {
+                  await ref.read(notesProvider.notifier).updateNote(next);
+                  if (!mounted) return;
                   if (!isArchived) context.pop();
+                } catch (error) {
+                  _showError(error);
                 }
               },
             ),
             ListTile(
               leading: const Icon(Icons.delete_outline),
               title: const Text('Delete'),
-              onTap: () {
-                Navigator.pop(context);
-                if (_existingNote != null) {
-                  ref.read(notesProvider.notifier).deleteNote(
-                        _existingNote!.id,
-                      );
+              onTap: () async {
+                Navigator.pop(sheetContext);
+                if (_existingNote == null) return;
+                try {
+                  await ref
+                      .read(notesProvider.notifier)
+                      .deleteNote(_existingNote!.id);
+                  if (!mounted) return;
                   context.pop();
+                } catch (error) {
+                  _showError(error);
                 }
               },
             ),
             ListTile(
               leading: const Icon(Icons.share_outlined),
               title: const Text('Share'),
-              onTap: () => Navigator.pop(context),
+              onTap: () => Navigator.pop(sheetContext),
             ),
             ListTile(
               leading: const Icon(Icons.copy_outlined),
               title: const Text('Duplicate'),
-              onTap: () {
-                Navigator.pop(context);
-                if (_existingNote != null) {
-                  final note = Note(
-                    id: DateTime.now().millisecondsSinceEpoch.toString(),
-                    title: '${_existingNote!.title} (copy)',
-                    content: _existingNote!.content,
-                    category: _existingNote!.category,
-                    color: _existingNote!.color,
-                    createdAt: DateTime.now(),
-                    tags: _existingNote!.tags,
-                  );
-                  ref.read(notesProvider.notifier).addNote(note);
+              onTap: () async {
+                Navigator.pop(sheetContext);
+                if (_existingNote == null) return;
+                final note = Note(
+                  id: '',
+                  title: '${_existingNote!.title} (copy)',
+                  content: _existingNote!.content,
+                  category: _existingNote!.category,
+                  color: _existingNote!.color,
+                  createdAt: DateTime.now(),
+                  tags: _existingNote!.tags,
+                );
+                try {
+                  await ref.read(notesProvider.notifier).addNote(note);
+                  if (!mounted) return;
                   context.pop();
+                } catch (error) {
+                  _showError(error);
                 }
               },
             ),
@@ -262,7 +313,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
           Padding(
             padding: const EdgeInsets.only(right: AppSpacing.marginMobile),
             child: FilledButton(
-              onPressed: _save,
+              onPressed: _isSaving ? null : _save,
               style: FilledButton.styleFrom(
                 backgroundColor: colors.primary,
                 foregroundColor: colors.onPrimary,
@@ -270,7 +321,16 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                   borderRadius: BorderRadius.circular(AppRadius.full),
                 ),
               ),
-              child: const Text('Save'),
+              child: _isSaving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text('Save'),
             ),
           ),
         ],

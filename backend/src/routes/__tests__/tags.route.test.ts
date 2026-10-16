@@ -5,11 +5,19 @@ import tagsRoute from '../tags.route';
 import { prisma } from '../../db';
 import { setupTestApp } from './setup';
 
+vi.mock('../../middleware/auth', () => ({
+  authMiddleware: (req: any, _res: any, next: any) => {
+    req.userId = 'test-user-id';
+    next();
+  },
+  requireAuth: (_req: any, _res: any, next: any) => next(),
+}));
+
 describe('Tags Routes', () => {
   let app: express.Express;
 
   beforeEach(() => {
-    app = setupTestApp(tagsRoute);
+    app = setupTestApp(tagsRoute, '/api/tags');
     vi.clearAllMocks();
   });
 
@@ -133,7 +141,7 @@ describe('Tags Routes', () => {
       (prisma.tag.update as any).mockResolvedValue(mockTag);
 
       const response = await request(app)
-        .patch('/api/tags/tag1')
+        .patch('/api/tags/ctag0000001')
         .send({ name: 'updated', color: '#00FF00' });
 
       expect(response.status).toBe(200);
@@ -144,7 +152,7 @@ describe('Tags Routes', () => {
       (prisma.tag.findFirst as any).mockResolvedValue(null);
 
       const response = await request(app)
-        .patch('/api/tags/nonexistent')
+        .patch('/api/tags/cnotfound000')
         .send({ name: 'updated' });
 
       expect(response.status).toBe(404);
@@ -155,7 +163,7 @@ describe('Tags Routes', () => {
       (prisma.tag.findUnique as any).mockResolvedValue({ id: 'other', name: 'updated' });
 
       const response = await request(app)
-        .patch('/api/tags/tag1')
+        .patch('/api/tags/ctag0000001')
         .send({ name: 'updated' });
 
       expect(response.status).toBe(400);
@@ -166,7 +174,7 @@ describe('Tags Routes', () => {
     it('deletes tag', async () => {
       (prisma.tag.deleteMany as any).mockResolvedValue({ count: 1 });
 
-      const response = await request(app).delete('/api/tags/tag1');
+      const response = await request(app).delete('/api/tags/ctag0000001');
 
       expect(response.status).toBe(204);
     });
@@ -174,7 +182,7 @@ describe('Tags Routes', () => {
     it('returns 404 for non-existent tag', async () => {
       (prisma.tag.deleteMany as any).mockResolvedValue({ count: 0 });
 
-      const response = await request(app).delete('/api/tags/nonexistent');
+      const response = await request(app).delete('/api/tags/cnotfound000');
 
       expect(response.status).toBe(404);
     });

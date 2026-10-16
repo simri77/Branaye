@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/models/note.dart';
-import '../../core/config/env.dart';
+import '../../data/api/dio_provider.dart';
 
 /// Search parameters with copyWith for immutability
 @immutable
@@ -271,37 +271,7 @@ class DioApiRepository implements ApiRepository {
   }
 }
 
-/// Dio provider (singleton)
-final dioProvider = Provider<Dio>((ref) {
-  final dio = Dio(BaseOptions(
-    baseUrl: apiBaseUrl,
-    connectTimeout: const Duration(seconds: 10),
-    receiveTimeout: const Duration(seconds: 10),
-    headers: {'Content-Type': 'application/json'},
-  ));
-
-  // Add auth interceptor
-  dio.interceptors.add(InterceptorsWrapper(
-    onRequest: (options, handler) {
-      // TODO: Add auth token from secure storage
-      // final token = await SecureStorage.getToken();
-      // if (token != null) options.headers['Authorization'] = 'Bearer $token';
-      handler.next(options);
-    },
-    onError: (error, handler) {
-      // Handle 401 globally - redirect to login
-      if (error.response?.statusCode == 401) {
-        // TODO: Trigger logout
-      }
-      handler.next(error);
-    },
-  ));
-
-  ref.onDispose(() => dio.close());
-  return dio;
-});
-
-/// ApiRepository provider
+/// ApiRepository provider — uses the app-wide authenticated Dio.
 final apiRepositoryProvider = Provider<ApiRepository>((ref) {
   return DioApiRepository(ref.watch(dioProvider));
 });

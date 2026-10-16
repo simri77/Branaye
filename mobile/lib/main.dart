@@ -5,30 +5,29 @@ import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'data/providers.dart';
 
-void main() {
-  runApp(const ProviderScope(child: BranayeApp()));
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Build the container before the first frame so the router guard can see an
+  // already-restored session — no "flash of login screen" on app start.
+  final container = ProviderContainer();
+
+  await container.read(authProvider.notifier).restoreSession();
+  await container.read(textSizeProvider.notifier).loadSavedSize();
+
+  runApp(
+    UncontrolledProviderScope(
+      container: container,
+      child: const BranayeApp(),
+    ),
+  );
 }
 
-class BranayeApp extends ConsumerStatefulWidget {
+class BranayeApp extends ConsumerWidget {
   const BranayeApp({super.key});
 
   @override
-  ConsumerState<BranayeApp> createState() => _BranayeAppState();
-}
-
-class _BranayeAppState extends ConsumerState<BranayeApp> {
-  @override
-  void initState() {
-    super.initState();
-    _loadPreferences();
-  }
-
-  Future<void> _loadPreferences() async {
-    await ref.read(textSizeProvider.notifier).loadSavedSize();
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final themeMode = ref.watch(themeModeProvider);
     final router = ref.watch(appRouterProvider);
 

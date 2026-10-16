@@ -5,8 +5,6 @@ export interface TagWithCount {
   name: string;
   color: string | null;
   noteCount: number;
-  createdAt: Date;
-  updatedAt: Date;
 }
 
 export async function listTags(userId: string): Promise<TagWithCount[]> {
@@ -23,8 +21,6 @@ export async function listTags(userId: string): Promise<TagWithCount[]> {
     name: tag.name,
     color: tag.color,
     noteCount: tag._count.notes,
-    createdAt: tag.createdAt,
-    updatedAt: tag.updatedAt,
   }));
 }
 
@@ -41,8 +37,6 @@ export async function getTagById(userId: string, id: string): Promise<TagWithCou
     name: tag.name,
     color: tag.color,
     noteCount: tag._count.notes,
-    createdAt: tag.createdAt,
-    updatedAt: tag.updatedAt,
   };
 }
 
@@ -57,8 +51,6 @@ export async function createTag(userId: string, name: string, color?: string): P
     name: tag.name,
     color: tag.color,
     noteCount: tag._count.notes,
-    createdAt: tag.createdAt,
-    updatedAt: tag.updatedAt,
   };
 }
 
@@ -91,8 +83,6 @@ export async function updateTag(
     name: tag.name,
     color: tag.color,
     noteCount: tag._count.notes,
-    createdAt: tag.createdAt,
-    updatedAt: tag.updatedAt,
   };
 }
 
@@ -117,8 +107,6 @@ export async function getTagSuggestions(userId: string, prefix: string, limit: n
     name: tag.name,
     color: tag.color,
     noteCount: tag._count.notes,
-    createdAt: tag.createdAt,
-    updatedAt: tag.updatedAt,
   }));
 }
 
@@ -135,7 +123,5 @@ export async function getPopularTags(userId: string, limit: number = 10): Promis
     name: tag.name,
     color: tag.color,
     noteCount: tag._count.notes,
-    createdAt: tag.createdAt,
-    updatedAt: tag.updatedAt,
   }));
 }
