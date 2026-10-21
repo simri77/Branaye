@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:dio/dio.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/theme/app_typography.dart';
+import '../../data/api/dio_provider.dart';
 
 class ChangePasswordScreen extends ConsumerStatefulWidget {
   const ChangePasswordScreen({super.key});
@@ -250,8 +252,7 @@ class _ChangePasswordScreenState extends ConsumerState<ChangePasswordScreen> {
     return SizedBox(
       width: double.infinity,
       child: FilledButton(
-        onPressed: () {
-          // TODO: Implement password change
+        onPressed: () async {
           if (_currentPasswordController.text.isEmpty ||
               _newPasswordController.text.isEmpty ||
               _confirmPasswordController.text.isEmpty) {
@@ -273,11 +274,23 @@ class _ChangePasswordScreenState extends ConsumerState<ChangePasswordScreen> {
             );
             return;
           }
-          // TODO: Call API to change password
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Password updated successfully')),
-          );
-          context.pop();
+          try {
+            final dio = ref.read(dioProvider);
+            await dio.post('/auth/change-password', data: {
+              'currentPassword': _currentPasswordController.text,
+              'newPassword': _newPasswordController.text,
+            });
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Password updated successfully')),
+            );
+            context.pop();
+          } catch (e) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(messageForDioError(e is DioException ? e : DioException(requestOptions: RequestOptions(path: ''))))),
+            );
+          }
         },
         style: FilledButton.styleFrom(
           padding: const EdgeInsets.symmetric(

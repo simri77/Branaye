@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/models/note.dart';
 import '../../core/theme/app_typography.dart';
 import '../../data/providers.dart';
 import '../widgets/note_card.dart';
@@ -18,7 +19,9 @@ class FilteredNotesScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final notesAsync = ref.watch(notesProvider);
+    final AsyncValue<List<Note>> notesAsync = mode == FilterMode.archived
+        ? ref.watch(archivedNotesProvider)
+        : ref.watch(notesProvider);
     final colors = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 

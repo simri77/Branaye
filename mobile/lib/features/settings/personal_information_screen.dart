@@ -45,12 +45,13 @@ class _PersonalInformationScreenState
     try {
       final prefs = await SharedPreferences.getInstance();
       final auth = ref.read(authProvider);
+      final uid = auth.user?.id ?? 'anon';
       
-      final name = prefs.getString('profile_name') ?? auth.user?.name ?? '';
-      final email = prefs.getString('profile_email') ?? auth.user?.email ?? '';
-      final phone = prefs.getString('profile_phone') ?? '';
-      final bio = prefs.getString('profile_bio') ?? '';
-      final imagePath = prefs.getString('profile_image_path');
+      final name = prefs.getString('profile_name_$uid') ?? auth.user?.name ?? '';
+      final email = prefs.getString('profile_email_$uid') ?? auth.user?.email ?? '';
+      final phone = prefs.getString('profile_phone_$uid') ?? '';
+      final bio = prefs.getString('profile_bio_$uid') ?? '';
+      final imagePath = prefs.getString('profile_image_path_$uid');
 
       if (mounted) {
         setState(() {
@@ -73,17 +74,19 @@ class _PersonalInformationScreenState
 
   Future<void> _saveProfile() async {
     final prefs = await SharedPreferences.getInstance();
+    final auth = ref.read(authProvider);
+    final uid = auth.user?.id ?? 'anon';
     
     final name = _nameController.text.trim();
     final email = _emailController.text.trim();
     
-    await prefs.setString('profile_name', name);
-    await prefs.setString('profile_email', email);
-    await prefs.setString('profile_phone', _phoneController.text.trim());
-    await prefs.setString('profile_bio', _bioController.text.trim());
+    await prefs.setString('profile_name_$uid', name);
+    await prefs.setString('profile_email_$uid', email);
+    await prefs.setString('profile_phone_$uid', _phoneController.text.trim());
+    await prefs.setString('profile_bio_$uid', _bioController.text.trim());
     
     if (_profileImagePath != null) {
-      await prefs.setString('profile_image_path', _profileImagePath!);
+      await prefs.setString('profile_image_path_$uid', _profileImagePath!);
     }
 
     // Update auth provider so settings screen reflects changes
