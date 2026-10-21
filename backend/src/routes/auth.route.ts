@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { rateLimit } from 'express-rate-limit';
-import { register, login, getMe, updateMe } from '../services/auth.service';
-import { registerSchema, loginSchema, updateMeSchema } from '../validation/schemas';
+import { register, login, getMe, updateMe, changePassword, updateFcmToken } from '../services/auth.service';
+import { registerSchema, loginSchema, updateMeSchema, changePasswordSchema, fcmTokenSchema } from '../validation/schemas';
 import { validate } from '../validation/middleware';
 import { authMiddleware, requireAuth } from '../middleware/auth';
 
@@ -167,6 +167,26 @@ router.patch('/me', authMiddleware, requireAuth, validate(updateMeSchema), async
   try {
     const userId = (req as any).userId;
     const result = await updateMe(userId, req.body);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/change-password', authMiddleware, requireAuth, validate(changePasswordSchema), async (req, res, next) => {
+  try {
+    const userId = (req as any).userId;
+    const result = await changePassword(userId, req.body);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/fcm-token', authMiddleware, requireAuth, validate(fcmTokenSchema), async (req, res, next) => {
+  try {
+    const userId = (req as any).userId;
+    const result = await updateFcmToken(userId, req.body.token);
     res.json(result);
   } catch (error) {
     next(error);

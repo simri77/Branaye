@@ -21,6 +21,19 @@ export const updateMeSchema = z.object({
   }),
 });
 
+export const changePasswordSchema = z.object({
+  body: z.object({
+    currentPassword: z.string().min(1),
+    newPassword: z.string().min(8).max(128),
+  }),
+});
+
+export const fcmTokenSchema = z.object({
+  body: z.object({
+    token: z.string().min(1),
+  }),
+});
+
 export const createNoteSchema = z.object({
   body: z.object({
     title: z.string().min(1).max(200),

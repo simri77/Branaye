@@ -88,6 +88,25 @@ export async function updateMe(userId: string, input: { name: string }) {
   return { user: { ...toAuthUser(updated), createdAt: updated.createdAt } };
 }
 
+export async function changePassword(userId: string, input: { currentPassword: string; newPassword: string }) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    throw new AppError(404, 'User not found');
+  }
+  const matches = await bcrypt.compare(input.currentPassword, user.passwordHash);
+  if (!matches) {
+    throw new AppError(400, 'Current password is incorrect');
+  }
+  const newHash = await bcrypt.hash(input.newPassword, BCRYPT_COST);
+  await prisma.user.update({ where: { id: userId }, data: { passwordHash: newHash } });
+  return { message: 'Password changed successfully' };
+}
+
+export async function updateFcmToken(userId: string, token: string) {
+  await prisma.user.update({ where: { id: userId }, data: { fcmToken: token } });
+  return { message: 'FCM token updated' };
+}
+
 function isUniqueViolation(error: unknown): boolean {
   return typeof error === 'object' && error !== null && (error as { code?: string }).code === 'P2002';
 }
