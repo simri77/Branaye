@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/models/note.dart';
 import '../../core/theme/app_typography.dart';
 import 'search_providers.dart';
+import '../../data/providers.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -59,6 +60,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final params = ref.watch(searchParamsProvider);
     final resultsAsync = ref.watch(searchResultsProvider(params));
     final recentSearches = ref.watch(recentSearchesProvider);
+    final customCategories = ref.watch(categoriesProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -113,8 +115,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           ),
           _FilterChips(
             selected: _selectedFilter,
-            onSelected: (f) => setState(() => _selectedFilter = f),
-            categories: const ['Personal', 'Work', 'Study', 'Ideas'],
+            onSelected: (f) {
+              setState(() => _selectedFilter = f);
+              final v = f == SearchFilter.title ? 'title' : f == SearchFilter.content ? 'content' : f == SearchFilter.tags ? 'tags' : 'all';
+              ref.read(searchParamsProvider.notifier).updateSearchIn(v);
+            },
+            categories: ['Personal', 'Work', 'Study', 'Ideas', ...customCategories.map((c) => c.name)],
             selectedCategory: params.category,
             onCategorySelected: (cat) {
               ref.read(searchParamsProvider.notifier).updateCategory(cat);

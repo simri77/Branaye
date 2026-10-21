@@ -30,13 +30,6 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   bool _showCategoryPicker = false;
   bool _showTagPicker = false;
 
-  static const List<String> _categories = [
-    'Personal',
-    'Work',
-    'Study',
-    'Ideas',
-  ];
-
   static const List<Color> _noteColors = [
     AppColors.noteWashWork,
     AppColors.noteWashPersonal,
@@ -510,7 +503,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                           Wrap(
                             spacing: AppSpacing.stackSm,
                             runSpacing: AppSpacing.stackSm,
-                            children: _categories.map((cat) {
+                            children: ['Personal', 'Work', 'Study', 'Ideas', ...ref.read(categoriesProvider).map((c) => c.name)].map((cat) {
                               final isSelected = cat == _selectedCategory;
                               return ChoiceChip(
                                 label: Text(cat),

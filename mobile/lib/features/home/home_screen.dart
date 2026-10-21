@@ -15,14 +15,6 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  static const List<String> _categories = [
-    'All',
-    'Personal',
-    'Work',
-    'Study',
-    'Ideas',
-  ];
-
   String _selectedCategory = 'All';
 
   @override
@@ -54,12 +46,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       body: notesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, stack) => Center(child: Text('Failed to load notes')),
-        data: (notes) => _buildContent(context, notes),
+        data: (notes) => _buildContent(context, notes, ref.watch(categoriesProvider)),
       ),
     );
   }
 
-  Widget _buildContent(BuildContext context, List<Note> notes) {
+  Widget _buildContent(BuildContext context, List<Note> notes, List<CategoryItem> customCategories) {
+    final categories = [
+      'All',
+      'Personal',
+      'Work',
+      'Study',
+      'Ideas',
+      ...customCategories.map((c) => c.name),
+    ];
     final colors = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
@@ -75,7 +75,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       padding: const EdgeInsets.all(AppSpacing.marginMobile),
       children: [
         Text(
-          'Good morning, Alex',
+          'Good morning, ${ref.watch(authProvider).user?.name ?? 'there'}',
           style: textTheme.headlineMedium?.copyWith(color: colors.onSurface),
         ),
         const SizedBox(height: AppSpacing.stackSm),
@@ -86,7 +86,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         const SizedBox(height: AppSpacing.stackMd),
 
         _CategoryChips(
-          categories: _categories,
+          categories: categories,
           selected: _selectedCategory,
           onSelected: (category) =>
               setState(() => _selectedCategory = category),

@@ -16,10 +16,12 @@ class SearchParams {
     this.page = 1,
     this.limit = 20,
     this.sort = 'createdAt:desc',
+    this.searchIn = 'all',
   });
 
   final String? q;
   final String? category;
+  final String searchIn;
   final List<String> tags;
   final int page;
   final int limit;
@@ -32,6 +34,7 @@ class SearchParams {
     int? page,
     int? limit,
     String? sort,
+    String? searchIn,
   }) {
     return SearchParams(
       q: q ?? this.q,
@@ -40,6 +43,7 @@ class SearchParams {
       page: page ?? this.page,
       limit: limit ?? this.limit,
       sort: sort ?? this.sort,
+      searchIn: searchIn ?? this.searchIn,
     );
   }
 
@@ -52,6 +56,7 @@ class SearchParams {
     if (q != null && q!.isNotEmpty) params['q'] = q;
     if (category != null) params['category'] = category;
     if (tags.isNotEmpty) params['tags'] = tags.join(',');
+    if (searchIn != 'all') params['searchIn'] = searchIn;
     return params;
   }
 
@@ -301,6 +306,10 @@ class SearchParamsNotifier extends Notifier<SearchParams> {
 
   void updateTags(List<String> tags) {
     state = state.copyWith(tags: tags, page: 1);
+  }
+
+  void updateSearchIn(String searchIn) {
+    state = state.copyWith(searchIn: searchIn, page: 1);
   }
 
   void nextPage() {

@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/models/note.dart';
 import 'api/auth_repository.dart';
 import 'api/dio_provider.dart';
+import 'api/fcm_service.dart';
 import 'api/notes_repository.dart';
 import 'api/session_events.dart';
 import 'api/token_store.dart';
@@ -67,6 +68,7 @@ class AuthNotifier extends Notifier<AuthState> {
     try {
       final user = await _repository.me();
       state = AuthState(status: AuthStatus.authenticated, user: _toUser(user));
+      ref.read(fcmServiceProvider).init();
     } on DioException catch (error) {
       // A dead token is not an error worth showing: just start logged out.
       if (error.response?.statusCode != 401) {
@@ -102,7 +104,10 @@ class AuthNotifier extends Notifier<AuthState> {
         status: AuthStatus.authenticated,
         user: _toUser(session.user),
       );
+      ref.invalidate(notesProvider);
       _notifyRouter();
+      // Register FCM token (best-effort, non-blocking).
+      ref.read(fcmServiceProvider).init();
       return true;
     } on DioException catch (error) {
       state = AuthState(
@@ -130,6 +135,7 @@ class AuthNotifier extends Notifier<AuthState> {
   void logout() {
     ref.read(tokenStoreProvider).clear();
     state = const AuthState();
+    ref.invalidate(notesProvider);
     _notifyRouter();
   }
 
@@ -159,9 +165,19 @@ final notesProvider = AsyncNotifierProvider<NotesNotifier, List<Note>>(
   NotesNotifier.new,
 );
 
+final archivedNotesProvider = FutureProvider<List<Note>>((ref) async {
+  ref.watch(authProvider.select((s) => s.user?.id));
+  final repo = ref.read(notesRepositoryProvider);
+  final all = await repo.list(includeArchived: true);
+  return all.where((n) => n.isArchived).toList();
+});
+
 class NotesNotifier extends AsyncNotifier<List<Note>> {
   @override
   Future<List<Note>> build() {
+    // Re-fetch (and discard cached notes) whenever the logged-in user changes,
+    // so one account never sees another account's notes.
+    ref.watch(authProvider.select((s) => s.user?.id));
     return _repository.list();
   }
 
@@ -226,7 +242,11 @@ class TextSizeNotifier extends Notifier<TextSizeOption> {
     state = TextSizeOption.values[savedIndex];
   }
 
-  void setSize(TextSizeOption size) => state = size;
+  Future<void> setSize(TextSizeOption size) async {
+    state = size;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('text_size_option', size.index);
+  }
 }
 
 // --- Categories ---
@@ -244,10 +264,25 @@ final categoriesProvider =
 
 class CategoriesNotifier extends Notifier<List<CategoryItem>> {
   @override
-  List<CategoryItem> build() => [];
+  List<CategoryItem> build() {
+    _load();
+    return [];
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final names = prefs.getStringList('custom_categories') ?? [];
+    state = names.map((n) => CategoryItem(n, Icons.folder)).toList();
+  }
 
   void add(String name, IconData icon) {
     if (state.any((c) => c.name == name)) return;
     state = [...state, CategoryItem(name, icon)];
+    _save();
+  }
+
+  Future<void> _save() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('custom_categories', state.map((c) => c.name).toList());
   }
 }
