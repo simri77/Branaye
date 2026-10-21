@@ -10,6 +10,7 @@ export interface ListNotesOptions {
   isArchived?: boolean;
   includeArchived?: boolean;
   q?: string;
+  searchIn?: 'all' | 'title' | 'content' | 'tags';
   tags?: string[];
   sort: string;
 }
@@ -35,15 +36,15 @@ function buildSortOrder(sort: string): Prisma.NoteOrderByWithRelationInput {
  * client sends that is not a key here falls back to the default column.
  */
 const SORT_COLUMNS: Record<string, string> = {
-  createdAt: 'n.created_at',
-  updatedAt: 'n.updated_at',
-  title: 'n.title',
+  createdAt: 'n."createdAt"',
+  updatedAt: 'n."updatedAt"',
+  title: 'n."title"',
 };
 
 const NOTE_DTO_COLUMNS = `
-  n.id, n.user_id AS "userId", n.title, n.content, n.category, n.color,
-  n.is_pinned AS "isPinned", n.is_favorite AS "isFavorite", n.is_archived AS "isArchived",
-  n.created_at AS "createdAt", n.updated_at AS "updatedAt", n.deleted_at AS "deletedAt"
+  n."id", n."userId", n."title", n."content", n."category", n."color",
+  n."isPinned", n."isFavorite", n."isArchived",
+  n."createdAt", n."updatedAt", n."deletedAt"
 `;
 
 interface NoteDto {
@@ -71,32 +72,32 @@ interface NoteDto {
  */
 function buildSearchWhere(options: ListNotesOptions): Prisma.Sql {
   const conditions: Prisma.Sql[] = [
-    Prisma.sql`n.user_id = ${options.userId}`,
-    Prisma.sql`n.deleted_at IS NULL`,
+    Prisma.sql`n."userId" = ${options.userId}`,
+    Prisma.sql`n."deletedAt" IS NULL`,
   ];
 
   if (!options.includeArchived) {
-    conditions.push(Prisma.sql`n.is_archived = false`);
+    conditions.push(Prisma.sql`n."isArchived" = false`);
   } else if (options.isArchived !== undefined) {
-    conditions.push(Prisma.sql`n.is_archived = ${options.isArchived}`);
+    conditions.push(Prisma.sql`n."isArchived" = ${options.isArchived}`);
   }
 
   if (options.isPinned !== undefined) {
-    conditions.push(Prisma.sql`n.is_pinned = ${options.isPinned}`);
+    conditions.push(Prisma.sql`n."isPinned" = ${options.isPinned}`);
   }
   if (options.isFavorite !== undefined) {
-    conditions.push(Prisma.sql`n.is_favorite = ${options.isFavorite}`);
+    conditions.push(Prisma.sql`n."isFavorite" = ${options.isFavorite}`);
   }
   if (options.category) {
-    conditions.push(Prisma.sql`n.category = ${options.category}`);
+    conditions.push(Prisma.sql`n."category" = ${options.category}`);
   }
   if (options.tags && options.tags.length > 0) {
     conditions.push(Prisma.sql`
       EXISTS (
         SELECT 1
         FROM note_tags nt
-        JOIN tags t ON nt.tag_id = t.id
-        WHERE nt.note_id = n.id AND t.name IN (${Prisma.join(options.tags)})
+        JOIN tags t ON nt."tagId" = t."id"
+        WHERE nt."noteId" = n."id" AND t."name" IN (${Prisma.join(options.tags)})
       )
     `);
   }
@@ -156,7 +157,7 @@ function buildWhereClause(options: ListNotesOptions): Prisma.NoteWhereInput {
 }
 
 export async function listNotes(options: ListNotesOptions): Promise<PaginatedResult<any>> {
-  const { userId, page, limit, q, sort, ...filters } = options;
+  const { userId, page, limit, q, sort, searchIn, ...filters } = options;
   const skip = (page - 1) * limit;
 
   // Build base where clause
@@ -167,24 +168,40 @@ export async function listNotes(options: ListNotesOptions): Promise<PaginatedRes
 
   if (q) {
     const searchWhere = buildSearchWhere(options);
+    const pattern = `%${q}%`;
+    const mode = searchIn || 'all';
+
+    const titleCond = Prisma.sql`n."title" ILIKE ${pattern}`;
+    const contentCond = Prisma.sql`n."content" ILIKE ${pattern}`;
+    const tagCond = Prisma.sql`EXISTS (
+            SELECT 1 FROM note_tags nt JOIN tags t ON nt."tagId" = t."id"
+            WHERE nt."noteId" = n."id" AND t."name" ILIKE ${pattern}
+          )`;
+
+    let matchCond: Prisma.Sql;
+    if (mode === 'title') matchCond = titleCond;
+    else if (mode === 'content') matchCond = contentCond;
+    else if (mode === 'tags') matchCond = tagCond;
+    else matchCond = Prisma.sql`${titleCond} OR ${contentCond} OR ${tagCond}`;
 
     const [field, direction] = sort.split(':');
     const column = SORT_COLUMNS[field] ?? SORT_COLUMNS.createdAt;
     const order = direction === 'asc' ? 'ASC' : 'DESC';
 
     const searchSql = Prisma.sql`
-      SELECT ${Prisma.raw(NOTE_DTO_COLUMNS)},
-        ts_rank_cd(n.search_vector, plainto_tsquery('english', ${q})) AS rank
+      SELECT ${Prisma.raw(NOTE_DTO_COLUMNS)}
       FROM notes n
-      WHERE ${searchWhere} AND n.search_vector @@ plainto_tsquery('english', ${q})
-      ORDER BY rank DESC, ${Prisma.raw(`${column} ${order}`)}
+      WHERE ${searchWhere}
+        AND (${matchCond})
+      ORDER BY ${Prisma.raw(`${column} ${order}`)}
       LIMIT ${limit} OFFSET ${skip}
     `;
 
     const countSql = Prisma.sql`
       SELECT COUNT(*)::int AS count
       FROM notes n
-      WHERE ${searchWhere} AND n.search_vector @@ plainto_tsquery('english', ${q})
+      WHERE ${searchWhere}
+        AND (${matchCond})
     `;
 
     const [rows, countRows] = await Promise.all([

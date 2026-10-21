@@ -52,7 +52,7 @@ router.get('/', validate(listNotesQuerySchema), async (req, res, next) => {
   try {
     const userId = (req as any).userId;
 
-    const { page, limit, category, isPinned, isFavorite, isArchived, includeArchived, q, tags, sort } = req.query;
+    const { page, limit, category, isPinned, isFavorite, isArchived, includeArchived, q, tags, sort, searchIn } = req.query;
     // `validate()` checks the query but does not write defaults back, so apply the
     // documented defaults here before they reach the service.
     const result = await listNotes({
@@ -65,6 +65,7 @@ router.get('/', validate(listNotesQuerySchema), async (req, res, next) => {
       isArchived: isArchived !== undefined ? isArchived === 'true' : undefined,
       includeArchived: includeArchived === 'true',
       q: q as string,
+      searchIn: searchIn as 'all' | 'title' | 'content' | 'tags' | undefined,
       tags: tags ? (tags as string).split(',') : undefined,
       sort: (sort as string) ?? 'createdAt:desc',
     });
