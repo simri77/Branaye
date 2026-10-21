@@ -54,6 +54,7 @@ String messageForDioError(DioException error) {
     case DioExceptionType.connectionTimeout:
     case DioExceptionType.sendTimeout:
     case DioExceptionType.receiveTimeout:
+    case DioExceptionType.transformTimeout:
       return 'Connection timed out. Check your network.';
     case DioExceptionType.connectionError:
     case DioExceptionType.unknown:

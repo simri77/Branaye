@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "7012942852",
+    "project_id": "branaye-6379f",
+    "storage_bucket": "branaye-6379f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:7012942852:android:93a83f84674c3fc3cd6151",
+        "android_client_info": {
+          "package_name": "com.noteflow.noteflow"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCeazakhyBmtA5T5Y0N5pb_MfajGflei88"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
