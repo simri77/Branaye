@@ -223,9 +223,8 @@ class SettingsScreen extends ConsumerWidget {
             color: colors.surfaceContainerLowest,
             borderRadius: BorderRadius.circular(AppRadius.xl),
             child: InkWell(
-              onTap: () {
-                ref.read(authProvider.notifier).logout();
-                authRefreshNotifier.value++;
+              onTap: () async {
+                await ref.read(authProvider.notifier).logout();
               },
               borderRadius: BorderRadius.circular(AppRadius.xl),
               child: Container(

@@ -265,6 +265,9 @@ class _TextSizeScreenState extends ConsumerState<TextSizeScreen> {
               setState(() {
                 _sliderValue = value;
               });
+              ref.read(textSizeProvider.notifier).setSize(
+                    TextSizeOption.values[value.round()],
+                  );
             },
           ),
         ],

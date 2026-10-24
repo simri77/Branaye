@@ -38,7 +38,7 @@ export const createNoteSchema = z.object({
   body: z.object({
     title: z.string().min(1).max(200),
     content: z.string().max(10000).optional(),
-    category: z.enum(['Personal', 'Work', 'Study', 'Ideas']).optional(),
+    category: z.string().trim().min(1).max(50).optional(),
     color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
     isPinned: z.boolean().optional(),
     isFavorite: z.boolean().optional(),
@@ -50,7 +50,7 @@ export const updateNoteSchema = z.object({
   body: z.object({
     title: z.string().min(1).max(200).optional(),
     content: z.string().max(10000).optional(),
-    category: z.enum(['Personal', 'Work', 'Study', 'Ideas']).optional(),
+    category: z.string().trim().min(1).max(50).optional(),
     color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
     isPinned: z.boolean().optional(),
     isFavorite: z.boolean().optional(),
@@ -72,7 +72,7 @@ export const listNotesQuerySchema = z.object({
   query: z.object({
     page: z.coerce.number().int().min(1).default(1),
     limit: z.coerce.number().int().min(1).max(100).default(20),
-    category: z.enum(['Personal', 'Work', 'Study', 'Ideas']).optional(),
+    category: z.string().trim().min(1).max(50).optional(),
     isPinned: z.coerce.boolean().optional(),
     isFavorite: z.coerce.boolean().optional(),
     isArchived: z.coerce.boolean().optional(),

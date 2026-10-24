@@ -14,6 +14,19 @@ class Note {
     this.tags = const [],
   });
 
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'content': content,
+        'category': category,
+        'color': '#${color.value.toRadixString(16).substring(2).toUpperCase()}',
+        'createdAt': createdAt.toIso8601String(),
+        'isPinned': isPinned,
+        'isFavorite': isFavorite,
+        'isArchived': isArchived,
+        'tags': tags,
+      };
+
   factory Note.fromJson(Map<String, dynamic> json) {
     return Note(
       id: json['id'] as String,

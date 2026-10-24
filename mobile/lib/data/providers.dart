@@ -7,6 +7,7 @@ import '../core/models/note.dart';
 import 'api/auth_repository.dart';
 import 'api/dio_provider.dart';
 import 'api/fcm_service.dart';
+import 'api/note_cache.dart';
 import 'api/notes_repository.dart';
 import 'api/session_events.dart';
 import 'api/token_store.dart';
@@ -132,8 +133,8 @@ class AuthNotifier extends Notifier<AuthState> {
     }
   }
 
-  void logout() {
-    ref.read(tokenStoreProvider).clear();
+  Future<void> logout() async {
+    await ref.read(tokenStoreProvider).clear();
     state = const AuthState();
     ref.invalidate(notesProvider);
     _notifyRouter();
@@ -178,7 +179,18 @@ class NotesNotifier extends AsyncNotifier<List<Note>> {
     // Re-fetch (and discard cached notes) whenever the logged-in user changes,
     // so one account never sees another account's notes.
     ref.watch(authProvider.select((s) => s.user?.id));
-    return _repository.list();
+    return _loadWithCache();
+  }
+
+  Future<List<Note>> _loadWithCache() async {
+    try {
+      final notes = await _repository.list();
+      await NoteCache().save(notes);
+      return notes;
+    } catch (_) {
+      final cached = await NoteCache().load();
+      return cached ?? <Note>[];
+    }
   }
 
   NotesRepository get _repository => ref.read(notesRepositoryProvider);
