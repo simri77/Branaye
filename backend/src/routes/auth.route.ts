@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { rateLimit } from 'express-rate-limit';
-import { register, login, getMe, updateMe, changePassword, updateFcmToken } from '../services/auth.service';
-import { registerSchema, loginSchema, updateMeSchema, changePasswordSchema, fcmTokenSchema } from '../validation/schemas';
+import { register, login, getMe, updateMe, changePassword, updateFcmToken, verifyEmail, resendVerificationEmail, loginWithGoogle } from '../services/auth.service';
+import { registerSchema, loginSchema, updateMeSchema, changePasswordSchema, fcmTokenSchema, resendVerificationSchema, googleLoginSchema } from '../validation/schemas';
 import { validate } from '../validation/middleware';
 import { authMiddleware, requireAuth } from '../middleware/auth';
 
@@ -36,7 +36,7 @@ const credentialLimiter = rateLimit({
  *               name: { type: string, minLength: 1 }
  *     responses:
  *       201:
- *         description: Registered; returns an access token and the user
+ *         description: Registered; returns instructions to verify the email before signing in
  *       400:
  *         description: Validation error
  *         content:
@@ -95,6 +95,41 @@ router.post('/login', validate(loginSchema), credentialLimiter, async (req, res,
   try {
     const result = await login(req.body);
     res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/google', validate(googleLoginSchema), credentialLimiter, async (req, res, next) => {
+  try {
+    const result = await loginWithGoogle(req.body.idToken);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/resend-verification', validate(resendVerificationSchema), credentialLimiter, async (req, res, next) => {
+  try {
+    const result = await resendVerificationEmail(req.body.email);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/verify-email', async (req, res, next) => {
+  try {
+    const token = req.query.token;
+    if (typeof token !== 'string' || token.length < 32 || token.length > 256) {
+      return res.status(400).type('html').send(
+        '<!doctype html><html><body><h1>Invalid verification link</h1><p>Request a new verification email from Branaye.</p></body></html>'
+      );
+    }
+    await verifyEmail(token);
+    res.type('html').send(
+      '<!doctype html><html><body><h1>Email verified</h1><p>Your Branaye account is verified. You can return to the app and sign in.</p></body></html>'
+    );
   } catch (error) {
     next(error);
   }

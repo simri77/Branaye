@@ -39,7 +39,10 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
 
   Color _editorBackground(bool isDark) {
     if (isDark) {
-      return Color.alphaBlend(_selectedColor.withValues(alpha: 0.15), AppColors.darkSurface);
+      return Color.alphaBlend(
+        _selectedColor.withValues(alpha: 0.15),
+        AppColors.darkSurface,
+      );
     }
     return _selectedColor;
   }
@@ -104,7 +107,9 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     final message = error is DioException
         ? messageForDioError(error)
         : 'Something went wrong. Please try again.';
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _save() async {
@@ -503,27 +508,42 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                           Wrap(
                             spacing: AppSpacing.stackSm,
                             runSpacing: AppSpacing.stackSm,
-                            children: ['Personal', 'Work', 'Study', 'Ideas', ...ref.read(categoriesProvider).map((c) => c.name)].map((cat) {
-                              final isSelected = cat == _selectedCategory;
-                              return ChoiceChip(
-                                label: Text(cat),
-                                selected: isSelected,
-                                onSelected: (_) {
-                                  setState(() {
-                                    _selectedCategory = cat;
-                                    _showCategoryPicker = false;
-                                  });
-                                },
-                                selectedColor: colors.primary,
-                                backgroundColor: colors.surfaceContainerHighest,
-                                labelStyle: textTheme.labelLarge?.copyWith(
-                                  color: isSelected
-                                      ? colors.onPrimary
-                                      : colors.onSurfaceVariant,
-                                ),
-                                showCheckmark: false,
-                              );
-                            }).toList(),
+                            children:
+                                [
+                                  'Personal',
+                                  'Work',
+                                  'Study',
+                                  'Ideas',
+                                  ...ref
+                                      .read(categoriesProvider)
+                                      .when(
+                                        data: (categories) =>
+                                            categories.map((c) => c.name),
+                                        loading: () => const <String>[],
+                                        error: (_, _) => const <String>[],
+                                      ),
+                                ].map((cat) {
+                                  final isSelected = cat == _selectedCategory;
+                                  return ChoiceChip(
+                                    label: Text(cat),
+                                    selected: isSelected,
+                                    onSelected: (_) {
+                                      setState(() {
+                                        _selectedCategory = cat;
+                                        _showCategoryPicker = false;
+                                      });
+                                    },
+                                    selectedColor: colors.primary,
+                                    backgroundColor:
+                                        colors.surfaceContainerHighest,
+                                    labelStyle: textTheme.labelLarge?.copyWith(
+                                      color: isSelected
+                                          ? colors.onPrimary
+                                          : colors.onSurfaceVariant,
+                                    ),
+                                    showCheckmark: false,
+                                  );
+                                }).toList(),
                           ),
                         ],
                       ),
@@ -589,7 +609,10 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                                       ),
                                     ),
                                     child: isSelected
-                                        ? Icon(Icons.check, color: colors.primary)
+                                        ? Icon(
+                                            Icons.check,
+                                            color: colors.primary,
+                                          )
                                         : null,
                                   ),
                                 ),
@@ -671,11 +694,7 @@ class _EditorToolbar extends StatelessWidget {
             label: 'Color',
             onTap: onColorTap,
           ),
-          _ToolbarButton(
-            icon: Icons.sell,
-            label: 'Tags',
-            onTap: onTagTap,
-          ),
+          _ToolbarButton(icon: Icons.sell, label: 'Tags', onTap: onTagTap),
           _ToolbarDivider(),
           _ToolbarButton(
             icon: Icons.more_vert,
@@ -720,7 +739,9 @@ class _ToolbarDivider extends StatelessWidget {
     return Container(
       width: 1,
       height: 24,
-      color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.3),
+      color: Theme.of(
+        context,
+      ).colorScheme.outlineVariant.withValues(alpha: 0.3),
     );
   }
 }

@@ -1,4 +1,5 @@
 import { prisma, Prisma } from '../db';
+import { assertCategoryAvailable } from './categories.service';
 
 export interface ListNotesOptions {
   userId: string;
@@ -280,6 +281,8 @@ export async function createNote(
     tags?: string[];
   }
 ) {
+  await assertCategoryAvailable(userId, data.category || 'Ideas');
+
   // Handle tags: find or create
   let tagIds: string[] = [];
   if (data.tags && data.tags.length > 0) {
@@ -337,6 +340,10 @@ export async function updateNote(
   // Check ownership
   const existing = await prisma.note.findFirst({ where: { id, userId, deletedAt: null } });
   if (!existing) return null;
+
+  if (data.category !== undefined) {
+    await assertCategoryAvailable(userId, data.category);
+  }
 
   // Handle tags replacement
   if (data.tags !== undefined) {

@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
+import 'package:dio/dio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/theme/app_typography.dart';
+import '../../data/api/google_drive_backup_service.dart';
 import '../../data/providers.dart';
+import '../search/search_providers.dart';
 
 class SyncBackupScreen extends ConsumerStatefulWidget {
   const SyncBackupScreen({super.key});
@@ -13,367 +16,301 @@ class SyncBackupScreen extends ConsumerStatefulWidget {
 }
 
 class _SyncBackupScreenState extends ConsumerState<SyncBackupScreen> {
-  bool _autoSync = false;
-  bool _syncWifiOnly = false;
-  bool _includeAttachments = false;
+  final _driveBackup = GoogleDriveBackupService();
+  String? _driveAccessToken;
+  DateTime? _lastBackup;
+  bool _isBusy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLastBackup();
+  }
+
+  Future<void> _loadLastBackup() async {
+    final key = _backupPreferenceKey();
+    if (key == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    final timestamp = prefs.getString(key);
+    if (!mounted) return;
+    setState(() {
+      _lastBackup = timestamp == null ? null : DateTime.tryParse(timestamp);
+    });
+  }
+
+  Future<void> _createBackup() async {
+    setState(() => _isBusy = true);
+    try {
+      final user = ref.read(authProvider).user;
+      if (user == null) throw StateError('Sign in to back up your data.');
+      final token =
+          _driveAccessToken ??
+          await ref.read(googleAccountServiceProvider).authorizeDrive();
+      if (!mounted || token == null) return;
+      setState(() => _driveAccessToken = token);
+      final notes = await ref.read(notesRepositoryProvider).listAllForBackup();
+      final categories = await ref.read(categoriesRepositoryProvider).list();
+      final tags = await ref.read(apiRepositoryProvider).getTags();
+      if (ref.read(authProvider).user?.id != user.id) {
+        throw StateError('Account changed while preparing the backup.');
+      }
+      final backupTime = DateTime.now().toUtc();
+      final backup = <String, dynamic>{
+        'format': 'branaye-backup',
+        'version': 1,
+        'createdAt': backupTime.toIso8601String(),
+        'account': {'id': user.id, 'email': user.email},
+        'notes': [
+          for (final note in notes)
+            {
+              'id': note.id,
+              'title': note.title,
+              'content': note.content,
+              'category': note.category,
+              'color':
+                  '#${note.color.toARGB32().toRadixString(16).substring(2)}',
+              'createdAt': note.createdAt.toIso8601String(),
+              'isPinned': note.isPinned,
+              'isFavorite': note.isFavorite,
+              'isArchived': note.isArchived,
+              'tags': note.tags,
+            },
+        ],
+        'categories': [
+          for (final category in categories)
+            {
+              'id': category.id,
+              'name': category.name,
+              'iconCodePoint': category.icon.codePoint,
+            },
+        ],
+        'tags': [
+          for (final tag in tags)
+            {'id': tag.id, 'name': tag.name, 'color': tag.color},
+        ],
+      };
+
+      await _driveBackup.uploadBackup(
+        accessToken: token,
+        accountId: user.id,
+        backup: backup,
+      );
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        'drive_last_backup_${user.id}',
+        backupTime.toIso8601String(),
+      );
+      if (!mounted) return;
+      setState(() => _lastBackup = backupTime);
+      _showMessage('Your Branaye backup was saved to Google Drive.');
+    } on DioException catch (error) {
+      if (error.response?.statusCode == 401 && mounted) {
+        setState(() => _driveAccessToken = null);
+      }
+      if (mounted) _showMessage('Google Drive backup failed: $error');
+    } catch (error) {
+      if (mounted) _showMessage('Google Drive backup failed: $error');
+    } finally {
+      if (mounted) setState(() => _isBusy = false);
+    }
+  }
+
+  Future<void> _restoreBackup() async {
+    setState(() => _isBusy = true);
+    try {
+      final user = ref.read(authProvider).user;
+      if (user == null) throw StateError('Sign in to restore your data.');
+      final token =
+          _driveAccessToken ??
+          await ref.read(googleAccountServiceProvider).authorizeDrive();
+      if (!mounted || token == null) return;
+      setState(() => _driveAccessToken = token);
+      final backup = await _driveBackup.downloadBackup(
+        accessToken: token,
+        accountId: user.id,
+      );
+      final backupAccount = backup['account'];
+      if (backupAccount is! Map<String, dynamic> ||
+          backupAccount['id'] != user.id) {
+        throw FormatException(
+          'This backup belongs to a different Branaye account.',
+        );
+      }
+
+      final confirmed = await _confirmRestore(backup);
+      if (!mounted || confirmed != true) return;
+      if (ref.read(authProvider).user?.id != user.id) {
+        throw StateError(
+          'Account changed before the backup could be restored.',
+        );
+      }
+
+      final result = await ref.read(backupRepositoryProvider).restore(backup);
+      ref.invalidate(notesProvider);
+      ref.invalidate(archivedNotesProvider);
+      ref.invalidate(categoriesProvider);
+      ref.invalidate(allTagsProvider);
+      ref.invalidate(popularTagsProvider);
+      ref.invalidate(searchResultsProvider);
+      if (!mounted) return;
+      final restored = result['restored'] as Map<String, dynamic>;
+      _showMessage(
+        'Restored ${restored['notes']} notes, ${restored['tags']} tags, and ${restored['categories']} categories.',
+      );
+    } on DioException catch (error) {
+      if (error.response?.statusCode == 401 && mounted) {
+        setState(() => _driveAccessToken = null);
+      }
+      if (mounted) _showMessage('Google Drive restore failed: $error');
+    } catch (error) {
+      if (mounted) _showMessage('Google Drive restore failed: $error');
+    } finally {
+      if (mounted) setState(() => _isBusy = false);
+    }
+  }
+
+  Future<bool?> _confirmRestore(Map<String, dynamic> backup) {
+    final noteCount = (backup['notes'] as List).length;
+    final tagCount = (backup['tags'] as List).length;
+    final categoryCount = (backup['categories'] as List).length;
+    final createdAt = DateTime.parse(backup['createdAt'] as String).toLocal();
+
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Replace your Branaye data?'),
+        content: Text(
+          'Backup from $createdAt contains $noteCount notes, $tagCount tags, and $categoryCount categories. '
+          'Restoring will permanently replace all notes, tags, and custom categories in this account. '
+          'Create a new backup first if you may need the current data.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Replace data'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String? _backupPreferenceKey() {
+    final userId = ref.read(authProvider).user?.id;
+    return userId == null ? null : 'drive_last_backup_$userId';
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final auth = ref.watch(authProvider);
-    final userEmail = auth.user?.email ?? 'user@example.com';
+    final connected = _driveAccessToken != null;
 
     return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.pop(),
-        ),
-        title: Text(
-          'Sync & Backup',
-          style: textTheme.headlineSmall?.copyWith(
-            color: colors.onSurface,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ),
-      body: SingleChildScrollView(
+      appBar: AppBar(title: const Text('Sync & Backup')),
+      body: ListView(
         padding: const EdgeInsets.all(AppSpacing.marginMobile),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildSyncStatusCard(colors, textTheme),
-            const SizedBox(height: AppSpacing.stackLg),
-            _buildSectionTitle('Sync Preferences', colors, textTheme),
-            const SizedBox(height: AppSpacing.stackMd),
-            _buildSyncPreferencesCard(colors, textTheme),
-            const SizedBox(height: AppSpacing.stackLg),
-            _buildSectionTitle('Cloud Provider', colors, textTheme),
-            const SizedBox(height: AppSpacing.stackMd),
-            _buildCloudProviderCard(colors, textTheme, userEmail),
-            const SizedBox(height: AppSpacing.stackLg),
-            _buildManualBackupButton(colors, textTheme),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSyncStatusCard(ColorScheme colors, TextTheme textTheme) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.stackLg),
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(AppRadius.xl),
-        border: Border.all(
-          color: colors.surfaceContainerHighest.withValues(alpha: 0.2),
-        ),
-      ),
-      child: Column(
         children: [
           Container(
-            width: 64,
-            height: 64,
+            padding: const EdgeInsets.all(AppSpacing.stackLg),
             decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: colors.primaryContainer,
+              color: colors.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(AppRadius.lg),
+              border: Border.all(color: colors.outlineVariant),
             ),
-            child: Icon(
-              Icons.cloud_done,
-              size: 32,
-              color: colors.onPrimaryContainer,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.stackMd),
-          Text(
-            'All notes synced',
-            style: textTheme.headlineSmall?.copyWith(
-              color: colors.onSurface,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.stackSm),
-          Text(
-            'Your data is backed up and up to date.',
-            style: textTheme.bodyMedium?.copyWith(
-              color: colors.onSurfaceVariant,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: AppSpacing.stackMd),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.access_time,
-                size: 16,
-                color: colors.onSurfaceVariant,
-              ),
-              const SizedBox(width: AppSpacing.stackSm),
-              Text(
-                'Last sync: Today, 10:42 AM',
-                style: textTheme.bodySmall?.copyWith(
-                  color: colors.onSurfaceVariant,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.cloud_outlined, color: colors.primary, size: 32),
+                const SizedBox(height: AppSpacing.stackMd),
+                Text('Google Drive backup', style: textTheme.titleLarge),
+                const SizedBox(height: AppSpacing.stackSm),
+                Text(
+                  'Save a full Branaye backup file containing your notes, tags, and categories to your Google Drive.',
+                  style: textTheme.bodyMedium?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.stackMd),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: () {
-                // TODO: Implement sync
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Syncing...')),
-                );
-              },
-              icon: const Icon(Icons.sync, size: 20),
-              label: Text(
-                'Sync Now',
-                style: textTheme.labelLarge?.copyWith(
-                  color: colors.onPrimary,
-                ),
-              ),
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(
-                  vertical: AppSpacing.stackMd,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.md),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionTitle(
-      String title, ColorScheme colors, TextTheme textTheme) {
-    return Text(
-      title,
-      style: textTheme.titleMedium?.copyWith(
-        color: colors.primary,
-        fontWeight: FontWeight.w600,
-      ),
-    );
-  }
-
-  Widget _buildSyncPreferencesCard(ColorScheme colors, TextTheme textTheme) {
-    return Container(
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(AppRadius.xl),
-        border: Border.all(
-          color: colors.surfaceContainerHighest.withValues(alpha: 0.2),
-        ),
-      ),
-      child: Column(
-        children: [
-          _buildToggleTile(
-            title: 'Auto Sync',
-            subtitle: 'Keep changes synced in real-time',
-            value: _autoSync,
-            onChanged: (value) => setState(() => _autoSync = value),
-            colors: colors,
-            textTheme: textTheme,
-            showDivider: true,
-          ),
-          _buildToggleTile(
-            title: 'Sync over Wi-Fi only',
-            subtitle: 'Save cellular data',
-            value: _syncWifiOnly,
-            onChanged: (value) => setState(() => _syncWifiOnly = value),
-            colors: colors,
-            textTheme: textTheme,
-            showDivider: true,
-          ),
-          _buildToggleTile(
-            title: 'Include Attachments',
-            subtitle: 'Sync images and files',
-            value: _includeAttachments,
-            onChanged: (value) => setState(() => _includeAttachments = value),
-            colors: colors,
-            textTheme: textTheme,
-            showDivider: false,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildToggleTile({
-    required String title,
-    required String subtitle,
-    required bool value,
-    required ValueChanged<bool> onChanged,
-    required ColorScheme colors,
-    required TextTheme textTheme,
-    required bool showDivider,
-  }) {
-    return Column(
-      children: [
-        ListTile(
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.stackMd,
-          ),
-          title: Text(
-            title,
-            style: textTheme.titleMedium?.copyWith(
-              color: colors.onSurface,
-            ),
-          ),
-          subtitle: Text(
-            subtitle,
-            style: textTheme.bodySmall?.copyWith(
-              color: colors.onSurfaceVariant,
-            ),
-          ),
-          trailing: Switch(
-            value: value,
-            onChanged: onChanged,
-            activeThumbColor: colors.primary,
-          ),
-        ),
-        if (showDivider)
-          Divider(
-            height: 1,
-            color: colors.surfaceContainerHighest,
-          ),
-      ],
-    );
-  }
-
-  Widget _buildCloudProviderCard(
-      ColorScheme colors, TextTheme textTheme, String email) {
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.stackMd),
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(AppRadius.xl),
-        border: Border.all(
-          color: colors.surfaceContainerHighest.withValues(alpha: 0.2),
-        ),
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: colors.surfaceContainerHigh,
-                  borderRadius: BorderRadius.circular(AppRadius.rounded),
-                ),
-                child: Icon(
-                  Icons.cloud,
-                  color: colors.primary,
-                ),
-              ),
-              const SizedBox(width: AppSpacing.stackMd),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                const SizedBox(height: AppSpacing.stackLg),
+                Row(
                   children: [
+                    Icon(
+                      connected ? Icons.check_circle : Icons.cloud_off,
+                      color: connected
+                          ? colors.primary
+                          : colors.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: AppSpacing.stackSm),
                     Text(
-                      'Google Drive',
-                      style: textTheme.titleMedium?.copyWith(
-                        color: colors.onSurface,
+                      connected ? 'Google Drive connected' : 'Not connected',
+                      style: textTheme.bodyMedium,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.stackMd),
+                Text(
+                  _lastBackup == null
+                      ? 'No backup created on this device yet.'
+                      : 'Last backup: ${_lastBackup!.toLocal()}',
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.stackLg),
+                Column(
+                  children: [
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: _isBusy ? null : _createBackup,
+                        icon: _isBusy
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.cloud_upload_outlined),
+                        label: Text(
+                          _isBusy
+                              ? 'Working…'
+                              : connected
+                              ? 'Back up now'
+                              : 'Connect & back up',
+                        ),
                       ),
                     ),
-                    Text(
-                      email,
-                      style: textTheme.bodySmall?.copyWith(
-                        color: colors.onSurfaceVariant,
+                    const SizedBox(height: AppSpacing.stackSm),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _isBusy ? null : _restoreBackup,
+                        icon: const Icon(Icons.settings_backup_restore),
+                        label: const Text('Restore from Drive'),
                       ),
                     ),
                   ],
                 ),
-              ),
-              TextButton(
-                onPressed: () {
-                  // TODO: Implement unlink
-                },
-                child: Text(
-                  'Unlink',
-                  style: textTheme.labelMedium?.copyWith(
-                    color: colors.error,
-                  ),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
           const SizedBox(height: AppSpacing.stackMd),
-          Row(
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Storage Used',
-                    style: textTheme.labelMedium?.copyWith(
-                      color: colors.onSurface,
-                    ),
-                  ),
-                  Text(
-                    '45 MB of 15 GB',
-                    style: textTheme.bodySmall?.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(width: AppSpacing.stackMd),
-              Expanded(
-                child: LinearProgressIndicator(
-                  value: 45 / 15000,
-                  backgroundColor: colors.surfaceContainerHighest,
-                  valueColor: AlwaysStoppedAnimation<Color>(colors.primary),
-                  minHeight: 6,
-                  borderRadius: BorderRadius.circular(3),
-                ),
-              ),
-            ],
+          Text(
+            'The backup is stored as Branaye-backup.json in Google Drive. The first backup asks you to choose an account and grant access to the Branaye backup file.',
+            style: textTheme.bodySmall?.copyWith(
+              color: colors.onSurfaceVariant,
+            ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildManualBackupButton(ColorScheme colors, TextTheme textTheme) {
-    return SizedBox(
-      width: double.infinity,
-      child: OutlinedButton.icon(
-        onPressed: () {
-          // TODO: Implement manual backup
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Creating backup...')),
-          );
-        },
-        icon: Icon(
-          Icons.download,
-          color: colors.primary,
-        ),
-        label: Text(
-          'Create Manual Local Backup',
-          style: textTheme.labelLarge?.copyWith(
-            color: colors.primary,
-          ),
-        ),
-        style: OutlinedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(
-            vertical: AppSpacing.stackMd,
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadius.md),
-          ),
-          side: BorderSide(color: colors.primary),
-        ),
       ),
     );
   }

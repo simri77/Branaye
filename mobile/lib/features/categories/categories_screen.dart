@@ -1,9 +1,12 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/models/note.dart';
+import '../../core/models/category.dart';
 import '../../core/theme/app_typography.dart';
+import '../../data/api/dio_provider.dart';
 import '../../data/providers.dart';
 
 class CategoriesScreen extends ConsumerStatefulWidget {
@@ -29,32 +32,7 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
 
     IconData selectedIcon = Icons.folder;
 
-    final iconOptions = [
-      Icons.folder,
-      Icons.work,
-      Icons.school,
-      Icons.person,
-      Icons.lightbulb,
-      Icons.star,
-      Icons.book,
-      Icons.code,
-      Icons.music_note,
-      Icons.restaurant,
-      Icons.flight,
-      Icons.pets,
-      Icons.sports_esports,
-      Icons.shopping_bag,
-      Icons.camera_alt,
-      Icons.palette,
-      Icons.fitness_center,
-      Icons.travel_explore,
-      Icons.health_and_safety,
-      Icons.brush,
-      Icons.park,
-      Icons.coffee,
-      Icons.science,
-      Icons.auto_stories,
-    ];
+    const iconOptions = supportedCategoryIcons;
 
     showDialog(
       context: context,
@@ -83,27 +61,25 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
                     physics: const NeverScrollableScrollPhysics(),
                     gridDelegate:
                         const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 6,
-                      mainAxisSpacing: 4,
-                      crossAxisSpacing: 4,
-                    ),
+                          crossAxisCount: 6,
+                          mainAxisSpacing: 4,
+                          crossAxisSpacing: 4,
+                        ),
                     itemCount: iconOptions.length,
                     itemBuilder: (context, index) {
                       final icon = iconOptions[index];
-                      final isSelected =
-                          selectedIcon == icon;
+                      final isSelected = selectedIcon == icon;
                       return InkWell(
-                        onTap: () => setDialogState(
-                            () => selectedIcon = icon),
-                        borderRadius:
-                            BorderRadius.circular(AppRadius.rounded),
+                        onTap: () => setDialogState(() => selectedIcon = icon),
+                        borderRadius: BorderRadius.circular(AppRadius.rounded),
                         child: Container(
                           decoration: BoxDecoration(
                             color: isSelected
                                 ? colors.primaryContainer
                                 : colors.surfaceContainerHighest,
-                            borderRadius:
-                                BorderRadius.circular(AppRadius.rounded),
+                            borderRadius: BorderRadius.circular(
+                              AppRadius.rounded,
+                            ),
                             border: Border.all(
                               color: isSelected
                                   ? colors.primary
@@ -133,21 +109,20 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
                   TextField(
                     controller: _categoryNameController,
                     autofocus: true,
-                    style:
-                        textTheme.bodyLarge?.copyWith(color: colors.onSurface),
+                    style: textTheme.bodyLarge?.copyWith(
+                      color: colors.onSurface,
+                    ),
                     decoration: InputDecoration(
                       hintText: 'e.g. Recipes',
-                      hintStyle: textTheme.bodyLarge
-                          ?.copyWith(color: colors.outline),
+                      hintStyle: textTheme.bodyLarge?.copyWith(
+                        color: colors.outline,
+                      ),
                       border: OutlineInputBorder(
-                        borderRadius:
-                            BorderRadius.circular(AppRadius.rounded),
+                        borderRadius: BorderRadius.circular(AppRadius.rounded),
                       ),
                     ),
-                    onSubmitted: (_) => _createCategory(
-                      dialogContext,
-                      selectedIcon,
-                    ),
+                    onSubmitted: (_) =>
+                        _createCategory(dialogContext, selectedIcon),
                   ),
                 ],
               ),
@@ -159,10 +134,7 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
               child: const Text('Cancel'),
             ),
             FilledButton(
-              onPressed: () => _createCategory(
-                dialogContext,
-                selectedIcon,
-              ),
+              onPressed: () => _createCategory(dialogContext, selectedIcon),
               child: const Text('Create'),
             ),
           ],
@@ -171,23 +143,47 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
     );
   }
 
-  void _createCategory(BuildContext dialogContext, IconData icon) {
+  Future<void> _createCategory(
+    BuildContext dialogContext,
+    IconData icon,
+  ) async {
     final name = _categoryNameController.text.trim();
     if (name.isEmpty) return;
-    Navigator.pop(dialogContext);
-    ref.read(categoriesProvider.notifier).add(name, icon);
+    try {
+      await ref.read(categoriesProvider.notifier).add(name, icon);
+      if (mounted && dialogContext.mounted) Navigator.pop(dialogContext);
+    } on DioException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(messageForDioError(error))));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not create category: $error')),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final notesAsync = ref.watch(notesProvider);
-    final customCategories = ref.watch(categoriesProvider);
+    final customCategoriesAsync = ref.watch(categoriesProvider);
 
     return Scaffold(
       body: notesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => const Center(child: Text('Failed to load notes')),
-        data: (notes) => _buildContent(context, notes, customCategories),
+        data: (notes) => customCategoriesAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (error, _) => Center(
+            child: TextButton(
+              onPressed: () => ref.invalidate(categoriesProvider),
+              child: Text('Failed to load categories: $error. Tap to retry.'),
+            ),
+          ),
+          data: (categories) => _buildContent(context, notes, categories),
+        ),
       ),
     );
   }
@@ -201,16 +197,38 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
     final textTheme = Theme.of(context).textTheme;
 
     final categoryData = [
-      _CatInfo('Personal', Icons.person, colors.primary, colors.primary.withValues(alpha: 0.1)),
-      _CatInfo('Work', Icons.work, colors.secondary, colors.secondary.withValues(alpha: 0.1)),
-      _CatInfo('Study', Icons.school, colors.tertiary, colors.tertiary.withValues(alpha: 0.1)),
-      _CatInfo('Ideas', Icons.lightbulb, colors.primary, colors.primaryContainer.withValues(alpha: 0.3)),
-      ...customCategories.map((c) => _CatInfo(
-            c.name,
-            c.icon,
-            colors.secondary,
-            colors.secondaryContainer.withValues(alpha: 0.3),
-          )),
+      _CatInfo(
+        'Personal',
+        Icons.person,
+        colors.primary,
+        colors.primary.withValues(alpha: 0.1),
+      ),
+      _CatInfo(
+        'Work',
+        Icons.work,
+        colors.secondary,
+        colors.secondary.withValues(alpha: 0.1),
+      ),
+      _CatInfo(
+        'Study',
+        Icons.school,
+        colors.tertiary,
+        colors.tertiary.withValues(alpha: 0.1),
+      ),
+      _CatInfo(
+        'Ideas',
+        Icons.lightbulb,
+        colors.primary,
+        colors.primaryContainer.withValues(alpha: 0.3),
+      ),
+      ...customCategories.map(
+        (c) => _CatInfo(
+          c.name,
+          c.icon,
+          colors.secondary,
+          colors.secondaryContainer.withValues(alpha: 0.3),
+        ),
+      ),
     ];
 
     return ListView(
@@ -223,9 +241,7 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
         const SizedBox(height: AppSpacing.stackSm),
         Text(
           'Organize your thoughts efficiently.',
-          style: textTheme.bodyMedium?.copyWith(
-            color: colors.onSurfaceVariant,
-          ),
+          style: textTheme.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
         ),
         const SizedBox(height: AppSpacing.stackLg),
         GridView.builder(
@@ -402,9 +418,7 @@ class _CategoryCard extends StatelessWidget {
               const Spacer(),
               Text(
                 category.name,
-                style: textTheme.titleMedium?.copyWith(
-                  color: colors.onSurface,
-                ),
+                style: textTheme.titleMedium?.copyWith(color: colors.onSurface),
               ),
               const SizedBox(height: AppSpacing.stackSm),
               Text(
@@ -441,10 +455,7 @@ class _AddCategoryCard extends StatelessWidget {
           padding: const EdgeInsets.all(AppSpacing.stackMd),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(AppRadius.xl),
-            border: Border.all(
-              color: colors.outlineVariant,
-              width: 2,
-            ),
+            border: Border.all(color: colors.outlineVariant, width: 2),
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,

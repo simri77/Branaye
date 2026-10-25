@@ -1,4 +1,5 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/dio_provider.dart';
@@ -12,15 +13,42 @@ class FcmService {
   final Ref _ref;
 
   Future<void> init() async {
+    if (defaultTargetPlatform == TargetPlatform.windows) return;
+
     final messaging = FirebaseMessaging.instance;
-    await messaging.requestPermission();
-    final token = await messaging.getToken();
-    if (token != null) {
-      try {
-        await _ref.read(dioProvider).post('/auth/fcm-token', data: {'token': token});
-      } catch (_) {}
+    final settings = await messaging.requestPermission(
+      alert: true,
+      announcement: false,
+      badge: true,
+      carPlay: false,
+      criticalAlert: false,
+      provisional: false,
+      sound: true,
+    );
+
+    if (settings.authorizationStatus == AuthorizationStatus.denied) {
+      return;
     }
-    FirebaseMessaging.onMessage.listen((_) {});
-    FirebaseMessaging.onMessageOpenedApp.listen((_) {});
+
+    FirebaseMessaging.onMessage.listen((message) {
+      debugPrint(
+        'FCM foreground message: ${message.notification?.title ?? 'Notification'}',
+      );
+    });
+
+    FirebaseMessaging.onMessageOpenedApp.listen((message) {
+      debugPrint(
+        'FCM app opened from notification: ${message.notification?.title ?? 'Notification'}',
+      );
+    });
+
+    final token = await messaging.getToken();
+    if (token == null) return;
+
+    try {
+      await _ref
+          .read(dioProvider)
+          .post('/auth/fcm-token', data: {'token': token});
+    } catch (_) {}
   }
 }

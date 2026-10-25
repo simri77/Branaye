@@ -30,10 +30,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isSubmitting = true);
-    final success = await ref.read(authProvider.notifier).login(
-          _emailController.text.trim(),
-          _passwordController.text,
-        );
+    final success = await ref
+        .read(authProvider.notifier)
+        .login(_emailController.text.trim(), _passwordController.text);
 
     if (!mounted) return;
     setState(() => _isSubmitting = false);
@@ -41,10 +40,57 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (success) return; // the router guard moves us to the home shell
 
     final message =
-        ref.read(authProvider).errorMessage ?? 'Login failed. Please try again.';
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+        ref.read(authProvider).errorMessage ??
+        'Login failed. Please try again.';
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _handleGoogleLogin() async {
+    setState(() => _isSubmitting = true);
+    try {
+      final idToken = await ref
+          .read(googleAccountServiceProvider)
+          .signInForAuthentication();
+      if (!mounted || idToken == null) return;
+      final success = await ref
+          .read(authProvider.notifier)
+          .loginWithGoogle(idToken);
+      if (!mounted || success) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ref.read(authProvider).errorMessage ??
+                'Google sign-in failed. Please try again.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Google sign-in failed: $error')));
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  Future<void> _resendVerification() async {
+    try {
+      final message = await ref
+          .read(authProvider.notifier)
+          .resendVerification(_emailController.text.trim());
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not resend verification email: $error')),
+      );
+    }
   }
 
   @override
@@ -105,9 +151,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     decoration: BoxDecoration(
                       color: colors.surfaceContainerLowest,
                       borderRadius: BorderRadius.circular(AppRadius.xl),
-                      border: Border.all(
-                        color: colors.surfaceContainer,
-                      ),
+                      border: Border.all(color: colors.surfaceContainer),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withValues(alpha: 0.04),
@@ -147,7 +191,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             controller: _passwordController,
                             label: 'Password',
                             icon: Icons.lock,
-                            hint: '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022',
+                            hint:
+                                '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022',
                             obscureText: _obscurePassword,
                             suffixIcon: IconButton(
                               icon: Icon(
@@ -236,8 +281,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             children: [
                               Expanded(
                                 child: Divider(
-                                  color: colors.outlineVariant
-                                      .withValues(alpha: 0.5),
+                                  color: colors.outlineVariant.withValues(
+                                    alpha: 0.5,
+                                  ),
                                 ),
                               ),
                               Padding(
@@ -254,8 +300,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               ),
                               Expanded(
                                 child: Divider(
-                                  color: colors.outlineVariant
-                                      .withValues(alpha: 0.5),
+                                  color: colors.outlineVariant.withValues(
+                                    alpha: 0.5,
+                                  ),
                                 ),
                               ),
                             ],
@@ -266,11 +313,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           SizedBox(
                             width: double.infinity,
                             child: OutlinedButton.icon(
-                              onPressed: () {},
-                              icon: const Icon(
-                                Icons.g_mobiledata,
-                                size: 24,
-                              ),
+                              onPressed: _isSubmitting
+                                  ? null
+                                  : _handleGoogleLogin,
+                              icon: const Icon(Icons.g_mobiledata, size: 24),
                               label: const Text('Continue with Google'),
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: colors.onSurface,
@@ -282,17 +328,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                     AppRadius.full,
                                   ),
                                 ),
-                                side: BorderSide(
-                                  color: colors.outlineVariant,
-                                ),
+                                side: BorderSide(color: colors.outlineVariant),
                               ),
                             ),
                           ),
+                          if (ref.watch(authProvider).errorCode ==
+                              'EMAIL_NOT_VERIFIED')
+                            TextButton(
+                              onPressed: _isSubmitting
+                                  ? null
+                                  : _resendVerification,
+                              child: const Text('Resend verification email'),
+                            ),
                           const SizedBox(height: AppSpacing.stackLg),
 
                           // Register Link
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
+                          Wrap(
+                            alignment: WrapAlignment.center,
                             children: [
                               Text(
                                 "Don't have an account? ",
@@ -350,10 +402,7 @@ class _BrandHeader extends StatelessWidget {
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(AppRadius.xl),
-            child: Image.asset(
-              'lib/img/Branaye_logo.png',
-              fit: BoxFit.cover,
-            ),
+            child: Image.asset('lib/img/Branaye_logo.png', fit: BoxFit.cover),
           ),
         ),
         const SizedBox(height: AppSpacing.stackMd),
@@ -368,9 +417,7 @@ class _BrandHeader extends StatelessWidget {
         const SizedBox(height: AppSpacing.stackSm),
         Text(
           'Welcome back to your digital paper.',
-          style: textTheme.bodyMedium?.copyWith(
-            color: colors.onSurfaceVariant,
-          ),
+          style: textTheme.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
         ),
       ],
     );
@@ -413,9 +460,7 @@ class _AuthField extends StatelessWidget {
           children: [
             Text(
               label,
-              style: textTheme.labelLarge?.copyWith(
-                color: colors.onSurface,
-              ),
+              style: textTheme.labelLarge?.copyWith(color: colors.onSurface),
             ),
             if (labelTrailing != null) ...[labelTrailing!],
           ],

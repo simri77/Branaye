@@ -38,7 +38,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     }
 
     setState(() => _isSubmitting = true);
-    final success = await ref.read(authProvider.notifier).register(
+    final success = await ref
+        .read(authProvider.notifier)
+        .register(
           _nameController.text.trim(),
           _emailController.text.trim(),
           _passwordController.text,
@@ -47,13 +49,58 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     if (!mounted) return;
     setState(() => _isSubmitting = false);
 
-    if (success) return; // the router guard moves us to the home shell
+    if (success) {
+      final message =
+          ref.read(authProvider).errorMessage ??
+          'Check your email to verify your account before signing in.';
+      context.go('/login');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+      return;
+    }
 
-    final message = ref.read(authProvider).errorMessage ??
+    final message =
+        ref.read(authProvider).errorMessage ??
         'Registration failed. Please try again.';
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _handleGoogleRegister() async {
+    if (!_agreedToTerms) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please accept the Terms of Service.')),
+      );
+      return;
+    }
+    setState(() => _isSubmitting = true);
+    try {
+      final idToken = await ref
+          .read(googleAccountServiceProvider)
+          .signInForAuthentication();
+      if (!mounted || idToken == null) return;
+      final success = await ref
+          .read(authProvider.notifier)
+          .loginWithGoogle(idToken);
+      if (!mounted || success) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ref.read(authProvider).errorMessage ??
+                'Google registration failed. Please try again.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Google registration failed: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
   }
 
   @override
@@ -114,9 +161,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     decoration: BoxDecoration(
                       color: colors.surfaceContainerLowest,
                       borderRadius: BorderRadius.circular(AppRadius.xl),
-                      border: Border.all(
-                        color: colors.surfaceContainer,
-                      ),
+                      border: Border.all(color: colors.surfaceContainer),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withValues(alpha: 0.04),
@@ -172,13 +217,14 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                             controller: _passwordController,
                             label: 'Password',
                             icon: Icons.lock,
-                            hint: '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022',
+                            hint:
+                                '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022',
                             obscureText: true,
                             validator: (v) {
                               if (v == null || v.isEmpty) {
                                 return 'Please enter a password';
                               }
-                              if (v.length < 6) return 'Min 6 characters';
+                              if (v.length < 8) return 'Min 8 characters';
                               return null;
                             },
                           ),
@@ -278,6 +324,14 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                             ),
                           ),
                           const SizedBox(height: AppSpacing.stackLg),
+                          OutlinedButton.icon(
+                            onPressed: (_agreedToTerms && !_isSubmitting)
+                                ? _handleGoogleRegister
+                                : null,
+                            icon: const Icon(Icons.g_mobiledata, size: 24),
+                            label: const Text('Register with Google'),
+                          ),
+                          const SizedBox(height: AppSpacing.stackLg),
 
                           // Login Link
                           Row(
@@ -339,10 +393,7 @@ class _BrandHeader extends StatelessWidget {
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(AppRadius.xl),
-            child: Image.asset(
-              'lib/img/Branaye_logo.png',
-              fit: BoxFit.cover,
-            ),
+            child: Image.asset('lib/img/Branaye_logo.png', fit: BoxFit.cover),
           ),
         ),
         const SizedBox(height: AppSpacing.stackMd),
@@ -358,9 +409,7 @@ class _BrandHeader extends StatelessWidget {
         Text(
           'Create your account to start capturing ideas.',
           textAlign: TextAlign.center,
-          style: textTheme.bodyMedium?.copyWith(
-            color: colors.onSurfaceVariant,
-          ),
+          style: textTheme.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
         ),
       ],
     );
@@ -396,9 +445,7 @@ class _AuthField extends StatelessWidget {
       children: [
         Text(
           label,
-          style: textTheme.labelLarge?.copyWith(
-            color: colors.onSurface,
-          ),
+          style: textTheme.labelLarge?.copyWith(color: colors.onSurface),
         ),
         const SizedBox(height: AppSpacing.stackSm),
         TextFormField(

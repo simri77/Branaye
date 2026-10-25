@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/models/note.dart';
+import '../../core/models/category.dart';
 import '../../core/theme/app_typography.dart';
 import '../../data/providers.dart';
 import '../widgets/note_card.dart';
@@ -22,6 +23,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final colors = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final notesAsync = ref.watch(notesProvider);
+    final customCategoriesAsync = ref.watch(categoriesProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -46,12 +48,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       body: notesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, stack) => Center(child: Text('Failed to load notes')),
-        data: (notes) => _buildContent(context, notes, ref.watch(categoriesProvider)),
+        data: (notes) => customCategoriesAsync.when(
+          data: (categories) => _buildContent(context, notes, categories),
+          loading: () => _buildContent(context, notes, const []),
+          error: (error, _) =>
+              _buildContent(context, notes, const [], categoryError: error),
+        ),
       ),
     );
   }
 
-  Widget _buildContent(BuildContext context, List<Note> notes, List<CategoryItem> customCategories) {
+  Widget _buildContent(
+    BuildContext context,
+    List<Note> notes,
+    List<CategoryItem> customCategories, {
+    Object? categoryError,
+  }) {
     final categories = [
       'All',
       'Personal',
@@ -64,16 +76,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final textTheme = Theme.of(context).textTheme;
 
     final pinned = notes.where((n) => n.isPinned && !n.isArchived).toList();
-    final favorites = notes.where((n) => n.isFavorite && !n.isArchived).toList();
-    final visible = (_selectedCategory == 'All'
-            ? notes
-            : notes.where((n) => n.category == _selectedCategory))
-        .where((n) => !n.isArchived)
+    final favorites = notes
+        .where((n) => n.isFavorite && !n.isArchived)
         .toList();
+    final visible =
+        (_selectedCategory == 'All'
+                ? notes
+                : notes.where((n) => n.category == _selectedCategory))
+            .where((n) => !n.isArchived)
+            .toList();
 
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.marginMobile),
       children: [
+        if (categoryError != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.stackMd),
+            child: Text(
+              'Custom categories could not be loaded: $categoryError',
+              style: textTheme.bodySmall?.copyWith(color: colors.error),
+            ),
+          ),
         Text(
           'Good morning, ${ref.watch(authProvider).user?.name ?? 'there'}',
           style: textTheme.headlineMedium?.copyWith(color: colors.onSurface),
@@ -312,8 +335,7 @@ class _CompactFavoriteCard extends StatelessWidget {
                       ),
                       decoration: BoxDecoration(
                         color: colors.onSurfaceVariant.withValues(alpha: 0.1),
-                        borderRadius:
-                            BorderRadius.circular(AppRadius.rounded),
+                        borderRadius: BorderRadius.circular(AppRadius.rounded),
                       ),
                       child: Text(
                         note.category,
@@ -333,9 +355,7 @@ class _CompactFavoriteCard extends StatelessWidget {
                 note.title,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: textTheme.titleSmall?.copyWith(
-                  color: colors.onSurface,
-                ),
+                style: textTheme.titleSmall?.copyWith(color: colors.onSurface),
               ),
             ],
           ),

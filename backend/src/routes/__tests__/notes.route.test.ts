@@ -205,6 +205,47 @@ describe('Notes Routes', () => {
       expect(response.body.tags).toContain('tag1');
     });
 
+    it('creates a note with a custom category owned by the authenticated user', async () => {
+      const mockNote = {
+        id: 'newnote',
+        userId: 'test-user-id',
+        title: 'Private category note',
+        content: '',
+        category: 'Recipes',
+        color: '#464BD4',
+        isPinned: false,
+        isFavorite: false,
+        isArchived: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        tags: [],
+      };
+      (prisma.category.findFirst as any).mockResolvedValue({ id: 'category1' });
+      (prisma.note.create as any).mockResolvedValue(mockNote);
+
+      const response = await request(app)
+        .post('/api/notes')
+        .send({ title: 'Private category note', category: 'Recipes' });
+
+      expect(response.status).toBe(201);
+      expect(prisma.category.findFirst).toHaveBeenCalledWith({
+        where: { userId: 'test-user-id', name: 'Recipes' },
+        select: { id: true },
+      });
+      expect(response.body.category).toBe('Recipes');
+    });
+
+    it('rejects a custom category not owned by the authenticated user', async () => {
+      (prisma.category.findFirst as any).mockResolvedValue(null);
+
+      const response = await request(app)
+        .post('/api/notes')
+        .send({ title: 'Not allowed', category: 'Someone else category' });
+
+      expect(response.status).toBe(400);
+      expect(prisma.note.create).not.toHaveBeenCalled();
+    });
+
     it('validates required title', async () => {
       const response = await request(app)
         .post('/api/notes')
@@ -241,6 +282,21 @@ describe('Notes Routes', () => {
       expect(response.status).toBe(200);
       expect(response.body.title).toBe('Updated');
       expect(response.body.isPinned).toBe(true);
+    });
+
+    it('rejects assigning a custom category not owned by the authenticated user', async () => {
+      (prisma.note.findFirst as any).mockResolvedValue({
+        id: 'note1',
+        userId: 'test-user-id',
+      });
+      (prisma.category.findFirst as any).mockResolvedValue(null);
+
+      const response = await request(app)
+        .patch('/api/notes/cnote0001')
+        .send({ category: 'Someone else category' });
+
+      expect(response.status).toBe(400);
+      expect(prisma.note.update).not.toHaveBeenCalled();
     });
 
     it('replaces tags when provided', async () => {

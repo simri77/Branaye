@@ -23,7 +23,7 @@ router.use(requireAuth);
  *     parameters:
  *       - { in: query, name: page, schema: { type: integer, minimum: 1, default: 1 } }
  *       - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
- *       - { in: query, name: category, schema: { type: string, enum: [Personal, Work, Study, Ideas] } }
+ *       - { in: query, name: category, schema: { type: string, maxLength: 50 } }
  *       - { in: query, name: isPinned, schema: { type: boolean } }
  *       - { in: query, name: isFavorite, schema: { type: boolean } }
  *       - { in: query, name: isArchived, schema: { type: boolean } }
@@ -122,7 +122,7 @@ router.get('/:id', validate(noteIdParamSchema), async (req, res, next) => {
  *             properties:
  *               title: { type: string, minLength: 1, maxLength: 200 }
  *               content: { type: string, maxLength: 10000 }
- *               category: { type: string, enum: [Personal, Work, Study, Ideas] }
+ *               category: { type: string, maxLength: 50, description: A built-in category or a custom category owned by the caller }
  *               color: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' }
  *               isPinned: { type: boolean }
  *               isFavorite: { type: boolean }

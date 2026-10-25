@@ -1,11 +1,11 @@
 {
-    "name": "branaye",
-    "short_name": "branaye",
+    "name": "Branaye",
+    "short_name": "Branaye",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Capture, organize, and preserve your thoughts with Branaye.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

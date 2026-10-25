@@ -10,10 +10,10 @@ export interface AccessTokenPayload {
 
 function jwtSecret(): string {
   const secret = process.env.JWT_SECRET;
-  if (!secret) {
-    throw new Error('JWT_SECRET is not set — add it to backend/.env');
-  }
-  return secret;
+  if (secret) return secret;
+  if (process.env.NODE_ENV === 'test') return 'branaye-test-secret-only';
+
+  throw new Error('JWT_SECRET is not set — add it to backend/.env');
 }
 
 export function signAccessToken(userId: string): string {

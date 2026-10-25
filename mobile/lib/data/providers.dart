@@ -1,13 +1,15 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/models/note.dart';
+import '../core/models/category.dart';
 import 'api/auth_repository.dart';
+import 'api/backup_repository.dart';
+import 'api/categories_repository.dart';
 import 'api/dio_provider.dart';
 import 'api/fcm_service.dart';
-import 'api/note_cache.dart';
+import 'api/google_account_service.dart';
 import 'api/notes_repository.dart';
 import 'api/session_events.dart';
 import 'api/token_store.dart';
@@ -36,11 +38,13 @@ class AuthState {
     this.status = AuthStatus.idle,
     this.user,
     this.errorMessage,
+    this.errorCode,
   });
 
   final AuthStatus status;
   final UserModel? user;
   final String? errorMessage;
+  final String? errorCode;
 
   bool get isLoggedIn => status == AuthStatus.authenticated;
   bool get isLoading => status == AuthStatus.loading;
@@ -53,24 +57,35 @@ final authProvider = NotifierProvider<AuthNotifier, AuthState>(
 class AuthNotifier extends Notifier<AuthState> {
   @override
   AuthState build() {
-    // A 401 from any request means our token is no longer good: drop it.
-    ref.watch(sessionEventsProvider).onUnauthorized.listen((_) => logout());
+    final subscription = ref.watch(sessionEventsProvider).onUnauthorized.listen(
+      (_) {
+        logout().catchError((Object error) {
+          debugPrint('Could not clear the expired session: $error');
+        });
+      },
+    );
+    ref.onDispose(subscription.cancel);
     return const AuthState();
   }
 
   AuthRepository get _repository => ref.read(authRepositoryProvider);
+  int _operationId = 0;
+  Future<void> _pendingLogout = Future<void>.value();
 
   /// Called once at startup, before the first frame, to restore a saved session.
   Future<void> restoreSession() async {
+    final operationId = ++_operationId;
     final token = await ref.read(tokenStoreProvider).read();
-    if (token == null || token.isEmpty) return;
+    if (operationId != _operationId || token == null || token.isEmpty) return;
 
     state = AuthState(status: AuthStatus.loading);
     try {
       final user = await _repository.me();
+      if (operationId != _operationId) return;
       state = AuthState(status: AuthStatus.authenticated, user: _toUser(user));
       ref.read(fcmServiceProvider).init();
     } on DioException catch (error) {
+      if (operationId != _operationId) return;
       // A dead token is not an error worth showing: just start logged out.
       if (error.response?.statusCode != 401) {
         state = AuthState(
@@ -91,33 +106,85 @@ class AuthNotifier extends Notifier<AuthState> {
   }
 
   Future<bool> register(String name, String email, String password) async {
-    return _authenticate(
-      () => _repository.register(name: name, email: email, password: password),
-    );
-  }
-
-  Future<bool> _authenticate(Future<AuthSession> Function() call) async {
+    final operationId = ++_operationId;
     state = const AuthState(status: AuthStatus.loading);
     try {
+      await _pendingLogout;
+      if (operationId != _operationId) return false;
+      final message = await _repository.register(
+        name: name,
+        email: email,
+        password: password,
+      );
+      if (operationId != _operationId) return false;
+      state = AuthState(errorMessage: message);
+      _notifyRouter();
+      return true;
+    } on DioException catch (error) {
+      if (operationId != _operationId) return false;
+      _setAuthError(messageForDioError(error), error);
+      _notifyRouter();
+      return false;
+    } catch (error) {
+      if (operationId != _operationId) return false;
+      state = AuthState(
+        status: AuthStatus.error,
+        errorMessage: error.toString(),
+      );
+      _notifyRouter();
+      return false;
+    }
+  }
+
+  Future<String> resendVerification(String email) =>
+      _repository.resendVerification(email);
+
+  Future<bool> loginWithGoogle(String idToken) =>
+      _authenticate(() => _repository.loginWithGoogle(idToken));
+
+  Future<bool> _authenticate(Future<AuthSession> Function() call) async {
+    final operationId = ++_operationId;
+    state = const AuthState(status: AuthStatus.loading);
+    try {
+      await _pendingLogout;
+      if (operationId != _operationId) return false;
       final session = await call();
+      if (operationId != _operationId) return false;
       await ref.read(tokenStoreProvider).write(session.accessToken);
+      if (operationId != _operationId) return false;
       state = AuthState(
         status: AuthStatus.authenticated,
         user: _toUser(session.user),
       );
-      ref.invalidate(notesProvider);
       _notifyRouter();
       // Register FCM token (best-effort, non-blocking).
       ref.read(fcmServiceProvider).init();
       return true;
     } on DioException catch (error) {
+      if (operationId != _operationId) return false;
+      _setAuthError(messageForDioError(error), error);
+      _notifyRouter();
+      return false;
+    } catch (error) {
+      if (operationId != _operationId) return false;
       state = AuthState(
         status: AuthStatus.error,
-        errorMessage: messageForDioError(error),
+        errorMessage: 'Could not save the login session: $error',
       );
       _notifyRouter();
       return false;
     }
+  }
+
+  void _setAuthError(String message, DioException error) {
+    final data = error.response?.data;
+    final details = data is Map<String, dynamic> ? data['details'] : null;
+    final code = details is Map<String, dynamic> ? details['code'] : null;
+    state = AuthState(
+      status: AuthStatus.error,
+      errorMessage: message,
+      errorCode: code is String ? code : null,
+    );
   }
 
   Future<void> updateProfile({String? name, String? email}) async {
@@ -134,10 +201,11 @@ class AuthNotifier extends Notifier<AuthState> {
   }
 
   Future<void> logout() async {
-    await ref.read(tokenStoreProvider).clear();
+    ++_operationId;
     state = const AuthState();
-    ref.invalidate(notesProvider);
     _notifyRouter();
+    _pendingLogout = ref.read(tokenStoreProvider).clear();
+    await _pendingLogout;
   }
 
   void clearError() {
@@ -156,10 +224,22 @@ final authRepositoryProvider = Provider<AuthRepository>((ref) {
   return AuthRepository(ref.watch(dioProvider));
 });
 
+final googleAccountServiceProvider = Provider<GoogleAccountService>((ref) {
+  return GoogleAccountService();
+});
+
+final backupRepositoryProvider = Provider<BackupRepository>((ref) {
+  return BackupRepository(ref.watch(dioProvider));
+});
+
 // --- Notes ---
 
 final notesRepositoryProvider = Provider<NotesRepository>((ref) {
   return ApiNotesRepository(ref.watch(dioProvider));
+});
+
+final categoriesRepositoryProvider = Provider<CategoriesRepository>((ref) {
+  return CategoriesRepository(ref.watch(dioProvider));
 });
 
 final notesProvider = AsyncNotifierProvider<NotesNotifier, List<Note>>(
@@ -179,18 +259,7 @@ class NotesNotifier extends AsyncNotifier<List<Note>> {
     // Re-fetch (and discard cached notes) whenever the logged-in user changes,
     // so one account never sees another account's notes.
     ref.watch(authProvider.select((s) => s.user?.id));
-    return _loadWithCache();
-  }
-
-  Future<List<Note>> _loadWithCache() async {
-    try {
-      final notes = await _repository.list();
-      await NoteCache().save(notes);
-      return notes;
-    } catch (_) {
-      final cached = await NoteCache().load();
-      return cached ?? <Note>[];
-    }
+    return _repository.list();
   }
 
   NotesRepository get _repository => ref.read(notesRepositoryProvider);
@@ -235,66 +304,32 @@ class ThemeModeNotifier extends Notifier<ThemeMode> {
   void setMode(ThemeMode mode) => state = mode;
 }
 
-// --- Text Size ---
-
-enum TextSizeOption { small, defaultSize, extraLarge }
-
-final textSizeProvider =
-    NotifierProvider<TextSizeNotifier, TextSizeOption>(
-  TextSizeNotifier.new,
-);
-
-class TextSizeNotifier extends Notifier<TextSizeOption> {
-  @override
-  TextSizeOption build() => TextSizeOption.defaultSize;
-
-  Future<void> loadSavedSize() async {
-    final prefs = await SharedPreferences.getInstance();
-    final savedIndex = prefs.getInt('text_size_option') ?? 1;
-    state = TextSizeOption.values[savedIndex];
-  }
-
-  Future<void> setSize(TextSizeOption size) async {
-    state = size;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('text_size_option', size.index);
-  }
-}
-
 // --- Categories ---
 
-class CategoryItem {
-  const CategoryItem(this.name, this.icon);
-  final String name;
-  final IconData icon;
-}
-
 final categoriesProvider =
-    NotifierProvider<CategoriesNotifier, List<CategoryItem>>(
-  CategoriesNotifier.new,
-);
+    AsyncNotifierProvider<CategoriesNotifier, List<CategoryItem>>(
+      CategoriesNotifier.new,
+    );
 
-class CategoriesNotifier extends Notifier<List<CategoryItem>> {
+class CategoriesNotifier extends AsyncNotifier<List<CategoryItem>> {
   @override
-  List<CategoryItem> build() {
-    _load();
-    return [];
+  Future<List<CategoryItem>> build() {
+    final userId = ref.watch(authProvider.select((auth) => auth.user?.id));
+    if (userId == null) return Future.value(const []);
+    return ref.watch(categoriesRepositoryProvider).list();
   }
 
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final names = prefs.getStringList('custom_categories') ?? [];
-    state = names.map((n) => CategoryItem(n, Icons.folder)).toList();
-  }
+  Future<void> add(String name, IconData icon) async {
+    final userId = ref.read(authProvider).user?.id;
+    if (userId == null) throw StateError('Sign in to create a category');
 
-  void add(String name, IconData icon) {
-    if (state.any((c) => c.name == name)) return;
-    state = [...state, CategoryItem(name, icon)];
-    _save();
-  }
-
-  Future<void> _save() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList('custom_categories', state.map((c) => c.name).toList());
+    final category = await ref
+        .read(categoriesRepositoryProvider)
+        .create(name.trim(), icon.codePoint);
+    if (ref.read(authProvider).user?.id != userId) return;
+    state = AsyncData([
+      ...state.asData?.value ?? const <CategoryItem>[],
+      category,
+    ]);
   }
 }

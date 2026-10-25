@@ -39,7 +39,7 @@ class AuthRepository {
 
   final Dio _dio;
 
-  Future<AuthSession> register({
+  Future<String> register({
     required String name,
     required String email,
     required String password,
@@ -48,7 +48,7 @@ class AuthRepository {
       '/auth/register',
       data: {'name': name, 'email': email, 'password': password},
     );
-    return AuthSession.fromJson(response.data!);
+    return response.data!['message'] as String;
   }
 
   Future<AuthSession> login({
@@ -60,6 +60,22 @@ class AuthRepository {
       data: {'email': email, 'password': password},
     );
     return AuthSession.fromJson(response.data!);
+  }
+
+  Future<AuthSession> loginWithGoogle(String idToken) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/auth/google',
+      data: {'idToken': idToken},
+    );
+    return AuthSession.fromJson(response.data!);
+  }
+
+  Future<String> resendVerification(String email) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/auth/resend-verification',
+      data: {'email': email},
+    );
+    return response.data!['message'] as String;
   }
 
   Future<AuthUser> me() async {

@@ -1,11 +1,11 @@
-import { Request, Response, NextFunction } from 'express';
-import { ZodError } from 'zod';
+import { Request, Response, NextFunction } from "express";
+import { ZodError } from "zod";
 
 export class AppError extends Error {
   constructor(
     public statusCode: number,
     public message: string,
-    public details?: any
+    public details?: any,
   ) {
     super(message);
     Object.setPrototypeOf(this, AppError.prototype);
@@ -16,29 +16,39 @@ export const errorHandler = (
   err: Error,
   _req: Request,
   res: Response,
-  _next: NextFunction
+  _next: NextFunction,
 ) => {
-  console.error('Error:', err);
+  console.error("Error:", err);
 
   if (err instanceof ZodError) {
     return res.status(400).json({
-      error: 'Validation failed',
+      error: "Validation failed",
       details: err.flatten().fieldErrors,
     });
+  }
+
+  const parserErrorType = (err as Error & { type?: string }).type;
+  if (parserErrorType === "entity.too.large") {
+    return res.status(413).json({
+      error: "Request body exceeds the 25 MB limit",
+    });
+  }
+  if (parserErrorType === "entity.parse.failed") {
+    return res.status(400).json({ error: "Request body is not valid JSON" });
   }
 
   // Prisma errors are detected by their `code` rather than `instanceof`:
   // the error class identity is not stable across the generated client, the
   // adapter package, and mocked modules in tests.
   const prismaCode = (err as { code?: string }).code;
-  if (prismaCode === 'P2002') {
+  if (prismaCode === "P2002") {
     return res.status(400).json({
-      error: 'Unique constraint violation',
+      error: "Unique constraint violation",
       details: (err as { meta?: unknown }).meta,
     });
   }
-  if (prismaCode === 'P2025') {
-    return res.status(404).json({ error: 'Record not found' });
+  if (prismaCode === "P2025") {
+    return res.status(404).json({ error: "Record not found" });
   }
 
   if (err instanceof AppError) {
@@ -48,9 +58,9 @@ export const errorHandler = (
     });
   }
 
-  return res.status(500).json({ error: 'Internal server error' });
+  return res.status(500).json({ error: "Internal server error" });
 };
 
 export const notFoundHandler = (_req: Request, res: Response) => {
-  res.status(404).json({ error: 'Route not found' });
+  res.status(404).json({ error: "Route not found" });
 };

@@ -1,40 +1,50 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:branaye/main.dart';
 
 void main() {
-  testWidgets('Home shows notes from the mock repository', (
+  testWidgets('Unauthenticated app opens the branded login screen', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const ProviderScope(child: BranayeApp()));
+    tester.view.physicalSize = const Size(720, 1280);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpWidget(const ProviderScope(child: BranayeApp()));
     await tester.pumpAndSettle();
 
-    expect(find.text('Good morning, Alex'), findsOneWidget);
-    expect(find.text('Project Branaye Vision'), findsOneWidget);
+    expect(find.text('Welcome back to your digital paper.'), findsOneWidget);
+    expect(find.text('Email Address'), findsOneWidget);
+    expect(find.text('Password'), findsOneWidget);
+    expect(find.text('Continue with Google'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Bottom nav navigates between tabs', (WidgetTester tester) async {
+  testWidgets('Login and registration screens navigate on a narrow device', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(640, 1280);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     await tester.pumpWidget(const ProviderScope(child: BranayeApp()));
-    await tester.pump(const Duration(milliseconds: 500));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Search'));
+    await tester.ensureVisible(find.text('Register'));
+    await tester.tap(find.text('Register'));
     await tester.pumpAndSettle();
-    expect(find.text('Search your notes...'), findsOneWidget);
+    expect(find.text('Create Account'), findsOneWidget);
+    expect(find.text('Register with Google'), findsOneWidget);
+    expect(tester.takeException(), isNull);
 
-    await tester.tap(find.text('Settings'));
+    await tester.ensureVisible(find.text('Login'));
+    await tester.tap(find.text('Login'));
     await tester.pumpAndSettle();
-    expect(find.text('Settings'), findsWidgets);
-
-    await tester.tap(find.text('Categories'));
-    await tester.pumpAndSettle();
-    expect(find.text('Categories'), findsWidgets);
-
-    await tester.tap(find.text('Home'));
-    await tester.pumpAndSettle();
-    expect(find.text('Good morning, Alex'), findsOneWidget);
+    expect(find.text('Continue with Google'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

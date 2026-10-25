@@ -7,13 +7,9 @@ import '../../features/search/search_screen.dart';
 import '../../features/categories/categories_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../features/settings/personal_information_screen.dart';
-import '../../features/settings/subscription_screen.dart';
-import '../../features/settings/change_password_screen.dart';
-import '../../features/settings/text_size_screen.dart';
 import '../../features/settings/sync_backup_screen.dart';
-import '../../features/settings/language_screen.dart';
 import '../../features/settings/security_screen.dart';
-import '../../features/settings/change_pin_screen.dart';
+import '../../features/settings/change_password_screen.dart';
 import '../../features/settings/about_screen.dart';
 import '../../features/settings/rate_us_screen.dart';
 import '../../features/settings/report_bug_screen.dart';
@@ -79,41 +75,21 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                         const PersonalInformationScreen(),
                   ),
                   GoRoute(
-                    path: 'subscription',
-                    builder: (context, state) =>
-                        const SubscriptionScreen(),
-                  ),
-                  GoRoute(
-                    path: 'change-password',
-                    builder: (context, state) =>
-                        const ChangePasswordScreen(),
-                  ),
-                  GoRoute(
                     path: 'security',
                     builder: (context, state) =>
                         const SecurityScreen(),
                     routes: [
                       GoRoute(
-                        path: 'change-pin',
+                        path: 'change-password',
                         builder: (context, state) =>
-                            const ChangePinFlow(),
+                            const ChangePasswordScreen(),
                       ),
                     ],
-                  ),
-                  GoRoute(
-                    path: 'text-size',
-                    builder: (context, state) =>
-                        const TextSizeScreen(),
                   ),
                   GoRoute(
                     path: 'sync-backup',
                     builder: (context, state) =>
                         const SyncBackupScreen(),
-                  ),
-                  GoRoute(
-                    path: 'language',
-                    builder: (context, state) =>
-                        const LanguageScreen(),
                   ),
                   GoRoute(
                     path: 'about',

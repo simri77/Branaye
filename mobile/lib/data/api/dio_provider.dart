@@ -28,16 +28,27 @@ final dioProvider = Provider<Dio>((ref) {
   dio.interceptors.add(
     InterceptorsWrapper(
       onRequest: (options, handler) async {
-        final token = await tokenStore.read();
-        if (token != null && token.isNotEmpty) {
-          options.headers['Authorization'] = 'Bearer $token';
+        final isPublicAuthRequest = const {
+          '/auth/login',
+          '/auth/register',
+          '/auth/google',
+          '/auth/resend-verification',
+        }.contains(options.path);
+        if (!isPublicAuthRequest) {
+          final token = await tokenStore.read();
+          if (token != null && token.isNotEmpty) {
+            options.headers['Authorization'] = 'Bearer $token';
+          }
         }
         handler.next(options);
       },
       onError: (error, handler) async {
-        if (error.response?.statusCode == 401) {
-          await tokenStore.clear();
-          sessionEvents.fireUnauthorized();
+        final requestToken = error.requestOptions.headers['Authorization'];
+        if (error.response?.statusCode == 401 && requestToken is String) {
+          final currentToken = await tokenStore.read();
+          if (requestToken == 'Bearer $currentToken') {
+            sessionEvents.fireUnauthorized();
+          }
         }
         handler.next(error);
       },
@@ -61,12 +72,16 @@ String messageForDioError(DioException error) {
       return 'Cannot reach the server. Is the backend running?';
     case DioExceptionType.badResponse:
       final data = error.response?.data;
-      if (data is Map && data['error'] is String) return data['error'] as String;
+      if (data is Map && data['error'] is String) {
+        return data['error'] as String;
+      }
       final status = error.response?.statusCode;
       if (status == 401) return 'Invalid email or password.';
       if (status == 409) return 'That email is already registered.';
       if (status == 429) return 'Too many attempts. Try again in a minute.';
-      if (status != null && status >= 500) return 'Server error. Please try again.';
+      if (status != null && status >= 500) {
+        return 'Server error. Please try again.';
+      }
       return 'Request failed (${status ?? 'unknown'}).';
     case DioExceptionType.cancel:
       return 'Request cancelled.';

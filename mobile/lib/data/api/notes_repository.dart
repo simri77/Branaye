@@ -14,6 +14,7 @@ abstract class NotesRepository {
     String sort = 'createdAt:desc',
   });
 
+  Future<List<Note>> listAllForBackup();
   Future<Note> create(Note note);
   Future<Note> update(Note note);
   Future<void> delete(String id);
@@ -25,6 +26,33 @@ class ApiNotesRepository implements NotesRepository {
   ApiNotesRepository(this._dio);
 
   final Dio _dio;
+
+  @override
+  Future<List<Note>> listAllForBackup() async {
+    final notes = <Note>[];
+    var page = 1;
+    var totalPages = 1;
+    do {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/notes',
+        queryParameters: {
+          'page': page,
+          'limit': 100,
+          'includeArchived': true,
+          'sort': 'createdAt:asc',
+        },
+      );
+      final result = response.data!;
+      final data = result['data'] as List<dynamic>;
+      notes.addAll(
+        data.map((item) => Note.fromJson(item as Map<String, dynamic>)),
+      );
+      final meta = result['meta'] as Map<String, dynamic>;
+      totalPages = meta['totalPages'] as int;
+      page++;
+    } while (page <= totalPages);
+    return notes;
+  }
 
   @override
   Future<List<Note>> list({
@@ -39,9 +67,9 @@ class ApiNotesRepository implements NotesRepository {
       queryParameters: {
         'limit': 100,
         'sort': sort,
-        if (q != null && q.isNotEmpty) 'q': q,
-        if (category != null) 'category': category,
-        if (tags != null && tags.isNotEmpty) 'tags': tags.join(','),
+        ...?q != null && q.isNotEmpty ? {'q': q} : null,
+        ...?category == null ? null : {'category': category},
+        ...?tags != null && tags.isNotEmpty ? {'tags': tags.join(',')} : null,
         if (includeArchived) 'includeArchived': true,
       },
     );

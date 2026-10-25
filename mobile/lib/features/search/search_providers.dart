@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/models/note.dart';
 import '../../data/api/dio_provider.dart';
+import '../../data/providers.dart' show authProvider;
 
 /// Search parameters with copyWith for immutability
 @immutable
@@ -112,10 +113,7 @@ class PaginationMeta {
 /// Paginated notes response from API
 @immutable
 class PaginatedNotes {
-  const PaginatedNotes({
-    required this.data,
-    required this.meta,
-  });
+  const PaginatedNotes({required this.data, required this.meta});
 
   final List<Note> data;
   final PaginationMeta meta;
@@ -130,7 +128,9 @@ class PaginatedNotes {
   factory PaginatedNotes.fromJson(Map<String, dynamic> json) {
     final List<dynamic> dataJson = json['data'] as List<dynamic>;
     return PaginatedNotes(
-      data: dataJson.map((e) => Note.fromJson(e as Map<String, dynamic>)).toList(),
+      data: dataJson
+          .map((e) => Note.fromJson(e as Map<String, dynamic>))
+          .toList(),
       meta: PaginationMeta.fromJson(json['meta'] as Map<String, dynamic>),
     );
   }
@@ -147,7 +147,8 @@ class ApiException implements Exception {
 }
 
 class UnauthorizedException extends ApiException {
-  const UnauthorizedException() : super('Session expired. Please log in again.', statusCode: 401);
+  const UnauthorizedException()
+    : super('Session expired. Please log in again.', statusCode: 401);
 }
 
 class NotFoundException extends ApiException {
@@ -155,11 +156,13 @@ class NotFoundException extends ApiException {
 }
 
 class ServerException extends ApiException {
-  const ServerException() : super('Server error. Please try again later.', statusCode: 500);
+  const ServerException()
+    : super('Server error. Please try again later.', statusCode: 500);
 }
 
 class NetworkException extends ApiException {
-  const NetworkException() : super('Network error. Check your connection.', statusCode: 0);
+  const NetworkException()
+    : super('Network error. Check your connection.', statusCode: 0);
 }
 
 /// ApiRepository interface for search
@@ -221,7 +224,9 @@ class DioApiRepository implements ApiRepository {
   Future<List<Tag>> getTags() async {
     try {
       final response = await _dio.get<List<dynamic>>('/tags');
-      return (response.data ?? []).map((e) => Tag.fromJson(e as Map<String, dynamic>)).toList();
+      return (response.data ?? [])
+          .map((e) => Tag.fromJson(e as Map<String, dynamic>))
+          .toList();
     } on DioException catch (e) {
       throw _mapDioError(e);
     }
@@ -234,7 +239,9 @@ class DioApiRepository implements ApiRepository {
         '/tags/suggestions',
         queryParameters: {'q': prefix, 'limit': limit},
       );
-      return (response.data ?? []).map((e) => Tag.fromJson(e as Map<String, dynamic>)).toList();
+      return (response.data ?? [])
+          .map((e) => Tag.fromJson(e as Map<String, dynamic>))
+          .toList();
     } on DioException catch (e) {
       throw _mapDioError(e);
     }
@@ -247,7 +254,9 @@ class DioApiRepository implements ApiRepository {
         '/tags/popular',
         queryParameters: {'limit': limit},
       );
-      return (response.data ?? []).map((e) => Tag.fromJson(e as Map<String, dynamic>)).toList();
+      return (response.data ?? [])
+          .map((e) => Tag.fromJson(e as Map<String, dynamic>))
+          .toList();
     } on DioException catch (e) {
       throw _mapDioError(e);
     }
@@ -285,6 +294,8 @@ final apiRepositoryProvider = Provider<ApiRepository>((ref) {
 class SearchParamsNotifier extends Notifier<SearchParams> {
   @override
   SearchParams build() {
+    _debounceTimer?.cancel();
+    ref.watch(authProvider.select((auth) => auth.user?.id));
     ref.onDispose(() {
       _debounceTimer?.cancel();
     });
@@ -322,43 +333,66 @@ class SearchParamsNotifier extends Notifier<SearchParams> {
 }
 
 /// Search params provider
-final searchParamsProvider = NotifierProvider<SearchParamsNotifier, SearchParams>(
-  SearchParamsNotifier.new,
-);
+final searchParamsProvider =
+    NotifierProvider<SearchParamsNotifier, SearchParams>(
+      SearchParamsNotifier.new,
+    );
 
 /// Search results provider with autoDispose + family for caching
-final searchResultsProvider = FutureProvider.autoDispose.family<PaginatedNotes, SearchParams>(
-  (ref, params) async {
-    // Don't search if query is empty and no filters
-    if (params.q == null && params.category == null && params.tags.isEmpty) {
-      return PaginatedNotes(
-        data: [],
-        meta: PaginationMeta(page: 1, limit: params.limit, total: 0, totalPages: 0),
-      );
-    }
+final searchResultsProvider = FutureProvider.autoDispose
+    .family<PaginatedNotes, SearchParams>((ref, params) async {
+      final userId = ref.watch(authProvider.select((auth) => auth.user?.id));
+      if (userId == null) {
+        return PaginatedNotes(
+          data: [],
+          meta: PaginationMeta(
+            page: 1,
+            limit: params.limit,
+            total: 0,
+            totalPages: 0,
+          ),
+        );
+      }
 
-    final repository = ref.watch(apiRepositoryProvider);
-    return repository.searchNotes(params);
-  },
-);
+      // Don't search if query is empty and no filters
+      if (params.q == null && params.category == null && params.tags.isEmpty) {
+        return PaginatedNotes(
+          data: [],
+          meta: PaginationMeta(
+            page: 1,
+            limit: params.limit,
+            total: 0,
+            totalPages: 0,
+          ),
+        );
+      }
+
+      final repository = ref.watch(apiRepositoryProvider);
+      return repository.searchNotes(params);
+    });
 
 /// All tags provider for editor picker
 final allTagsProvider = FutureProvider.autoDispose<List<Tag>>((ref) async {
+  final userId = ref.watch(authProvider.select((auth) => auth.user?.id));
+  if (userId == null) return [];
   final repository = ref.watch(apiRepositoryProvider);
   return repository.getTags();
 });
 
 /// Tag suggestions provider for autocomplete
-final tagSuggestionsProvider = FutureProvider.autoDispose.family<List<Tag>, String>(
-  (ref, prefix) async {
-    if (prefix.isEmpty) return [];
-    final repository = ref.watch(apiRepositoryProvider);
-    return repository.getTagSuggestions(prefix, limit: 10);
-  },
-);
+final tagSuggestionsProvider = FutureProvider.autoDispose
+    .family<List<Tag>, String>((ref, prefix) async {
+      final userId = ref.watch(authProvider.select((auth) => auth.user?.id));
+      if (userId == null) return [];
+      if (prefix.isEmpty) return [];
+      final repository = ref.watch(apiRepositoryProvider);
+      return repository.getTagSuggestions(prefix, limit: 10);
+    });
 
 /// Popular tags provider for tag cloud
 final popularTagsProvider = FutureProvider.autoDispose<List<Tag>>((ref) async {
+  final userId = ref.watch(authProvider.select((auth) => auth.user?.id));
+  if (userId == null) return [];
   final repository = ref.watch(apiRepositoryProvider);
   return repository.getPopularTags(limit: 10);
 });
@@ -388,7 +422,10 @@ class RecentSearchesNotifier extends Notifier<List<String>> {
   void addSearch(String query) {
     final trimmed = query.trim();
     if (trimmed.isEmpty) return;
-    state = [trimmed, ...state.where((s) => s != trimmed)].take(_maxItems).toList();
+    state = [
+      trimmed,
+      ...state.where((s) => s != trimmed),
+    ].take(_maxItems).toList();
     _save();
   }
 
@@ -399,6 +436,7 @@ class RecentSearchesNotifier extends Notifier<List<String>> {
 }
 
 /// Recent searches provider
-final recentSearchesProvider = NotifierProvider<RecentSearchesNotifier, List<String>>(
-  RecentSearchesNotifier.new,
-);
+final recentSearchesProvider =
+    NotifierProvider<RecentSearchesNotifier, List<String>>(
+      RecentSearchesNotifier.new,
+    );

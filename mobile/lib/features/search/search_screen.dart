@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/models/note.dart';
+import '../../core/models/category.dart';
 import '../../core/theme/app_typography.dart';
 import 'search_providers.dart';
 import '../../data/providers.dart';
@@ -44,9 +45,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   void _onScroll() {
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 200) {
-      final results = ref.read(searchResultsProvider(
-        ref.read(searchParamsProvider),
-      ));
+      final results = ref.read(
+        searchResultsProvider(ref.read(searchParamsProvider)),
+      );
       if (results.hasValue && results.value!.hasMore) {
         ref.read(searchParamsProvider.notifier).nextPage();
       }
@@ -60,7 +61,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final params = ref.watch(searchParamsProvider);
     final resultsAsync = ref.watch(searchResultsProvider(params));
     final recentSearches = ref.watch(recentSearchesProvider);
-    final customCategories = ref.watch(categoriesProvider);
+    final customCategoriesAsync = ref.watch(categoriesProvider);
+    final customCategories = customCategoriesAsync.when(
+      data: (categories) => categories,
+      loading: () => const <CategoryItem>[],
+      error: (_, _) => const <CategoryItem>[],
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -117,10 +123,22 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             selected: _selectedFilter,
             onSelected: (f) {
               setState(() => _selectedFilter = f);
-              final v = f == SearchFilter.title ? 'title' : f == SearchFilter.content ? 'content' : f == SearchFilter.tags ? 'tags' : 'all';
+              final v = f == SearchFilter.title
+                  ? 'title'
+                  : f == SearchFilter.content
+                  ? 'content'
+                  : f == SearchFilter.tags
+                  ? 'tags'
+                  : 'all';
               ref.read(searchParamsProvider.notifier).updateSearchIn(v);
             },
-            categories: ['Personal', 'Work', 'Study', 'Ideas', ...customCategories.map((c) => c.name)],
+            categories: [
+              'Personal',
+              'Work',
+              'Study',
+              'Ideas',
+              ...customCategories.map((c) => c.name),
+            ],
             selectedCategory: params.category,
             onCategorySelected: (cat) {
               ref.read(searchParamsProvider.notifier).updateCategory(cat);
@@ -133,6 +151,19 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               ref.read(searchParamsProvider.notifier).updateTags(newTags);
             },
           ),
+          if (customCategoriesAsync.hasError)
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.stackMd,
+              ),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Custom categories could not be loaded.',
+                  style: textTheme.bodySmall?.copyWith(color: colors.error),
+                ),
+              ),
+            ),
           Expanded(
             child: resultsAsync.when(
               loading: () => params.page == 1
@@ -140,7 +171,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   : _ResultList(
                       notes: const [],
                       query: _query,
-                      onNoteTap: (note) => context.push('/editor?id=${note.id}'),
+                      onNoteTap: (note) =>
+                          context.push('/editor?id=${note.id}'),
                       scrollController: _scrollController,
                       isLoadingMore: true,
                     ),
@@ -150,34 +182,39 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               ),
               data: (paginated) {
                 final notes = paginated.data;
-                return _query.isEmpty && params.category == null && params.tags.isEmpty
+                return _query.isEmpty &&
+                        params.category == null &&
+                        params.tags.isEmpty
                     ? _ResultList(
                         notes: notes,
                         query: '',
-                        onNoteTap: (note) => context.push('/editor?id=${note.id}'),
+                        onNoteTap: (note) =>
+                            context.push('/editor?id=${note.id}'),
                         scrollController: _scrollController,
                         isLoadingMore: paginated.hasMore,
                       )
                     : notes.isEmpty
-                        ? _EmptyState(
-                            onClear: () {
-                              _controller.clear();
-                              _focusNode.unfocus();
-                              ref.read(searchParamsProvider.notifier).reset();
-                              setState(() {
-                                _query = '';
-                                _selectedFilter = SearchFilter.all;
-                              });
-                            },
-                            hasFilters: params.category != null || params.tags.isNotEmpty,
-                          )
-                        : _ResultList(
-                            notes: notes,
-                            query: _query,
-                            onNoteTap: (note) => context.push('/editor?id=${note.id}'),
-                            scrollController: _scrollController,
-                            isLoadingMore: paginated.hasMore,
-                          );
+                    ? _EmptyState(
+                        onClear: () {
+                          _controller.clear();
+                          _focusNode.unfocus();
+                          ref.read(searchParamsProvider.notifier).reset();
+                          setState(() {
+                            _query = '';
+                            _selectedFilter = SearchFilter.all;
+                          });
+                        },
+                        hasFilters:
+                            params.category != null || params.tags.isNotEmpty,
+                      )
+                    : _ResultList(
+                        notes: notes,
+                        query: _query,
+                        onNoteTap: (note) =>
+                            context.push('/editor?id=${note.id}'),
+                        scrollController: _scrollController,
+                        isLoadingMore: paginated.hasMore,
+                      );
               },
             ),
           ),
@@ -214,7 +251,8 @@ class _SearchInput extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final showRecent = focusNode.hasFocus && query.isEmpty && recentSearches.isNotEmpty;
+    final showRecent =
+        focusNode.hasFocus && query.isEmpty && recentSearches.isNotEmpty;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -288,7 +326,9 @@ class _SearchInput extends StatelessWidget {
                       onPressed: onClearHistory,
                       child: Text(
                         'Clear',
-                        style: textTheme.labelLarge?.copyWith(color: colors.primary),
+                        style: textTheme.labelLarge?.copyWith(
+                          color: colors.primary,
+                        ),
                       ),
                     ),
                   ],
@@ -376,11 +416,7 @@ class _FilterChips extends StatelessWidget {
               ),
             ],
             const SizedBox(width: AppSpacing.gutter),
-            Container(
-              width: 1,
-              height: 24,
-              color: colors.outlineVariant,
-            ),
+            Container(width: 1, height: 24, color: colors.outlineVariant),
             const SizedBox(width: AppSpacing.gutter),
             ...categories.map((cat) {
               final isSelected = selectedCategory == cat;
@@ -389,9 +425,12 @@ class _FilterChips extends StatelessWidget {
                 child: FilterChip(
                   label: Text(cat),
                   selected: isSelected,
-                  onSelected: (_) => onCategorySelected(isSelected ? null : cat),
+                  onSelected: (_) =>
+                      onCategorySelected(isSelected ? null : cat),
                   labelStyle: textTheme.labelLarge?.copyWith(
-                    color: isSelected ? colors.onPrimary : colors.onSurfaceVariant,
+                    color: isSelected
+                        ? colors.onPrimary
+                        : colors.onSurfaceVariant,
                   ),
                   selectedColor: colors.primary,
                   backgroundColor: colors.surfaceContainerHighest,
@@ -404,11 +443,7 @@ class _FilterChips extends StatelessWidget {
             }),
             if (selectedTags.isNotEmpty) ...[
               const SizedBox(width: AppSpacing.gutter),
-              Container(
-                width: 1,
-                height: 24,
-                color: colors.outlineVariant,
-              ),
+              Container(width: 1, height: 24, color: colors.outlineVariant),
               const SizedBox(width: AppSpacing.gutter),
               ...selectedTags.map((tag) {
                 return Padding(
@@ -420,7 +455,9 @@ class _FilterChips extends StatelessWidget {
                     labelStyle: textTheme.labelLarge?.copyWith(
                       color: colors.primary,
                     ),
-                    backgroundColor: colors.primaryContainer.withValues(alpha: 0.2),
+                    backgroundColor: colors.primaryContainer.withValues(
+                      alpha: 0.2,
+                    ),
                     deleteIconColor: colors.primary,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(AppRadius.full),
@@ -487,8 +524,18 @@ class _ResultCard extends StatelessWidget {
   final VoidCallback onTap;
 
   static const List<String> _months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
 
   String _relativeTime(DateTime date) {
@@ -520,13 +567,15 @@ class _ResultCard extends StatelessWidget {
       if (idx > start) {
         spans.add(TextSpan(text: text.substring(start, idx), style: style));
       }
-      spans.add(TextSpan(
-        text: text.substring(idx, idx + q.length),
-        style: style.copyWith(
-          color: highlightColor,
-          fontWeight: FontWeight.w600,
+      spans.add(
+        TextSpan(
+          text: text.substring(idx, idx + q.length),
+          style: style.copyWith(
+            color: highlightColor,
+            fontWeight: FontWeight.w600,
+          ),
         ),
-      ));
+      );
       start = idx + q.length;
     }
     return TextSpan(children: spans);
@@ -607,9 +656,13 @@ class _ResultCard extends StatelessWidget {
                         labelStyle: textTheme.labelSmall?.copyWith(
                           color: colors.primary,
                         ),
-                        backgroundColor: colors.primaryContainer.withValues(alpha: 0.2),
+                        backgroundColor: colors.primaryContainer.withValues(
+                          alpha: 0.2,
+                        ),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(AppRadius.rounded),
+                          borderRadius: BorderRadius.circular(
+                            AppRadius.rounded,
+                          ),
                         ),
                       );
                     }).toList(),
@@ -702,13 +755,17 @@ class _ErrorState extends StatelessWidget {
             const SizedBox(height: AppSpacing.stackMd),
             Text(
               'Search failed',
-              style: textTheme.headlineMedium?.copyWith(color: colors.onSurface),
+              style: textTheme.headlineMedium?.copyWith(
+                color: colors.onSurface,
+              ),
             ),
             const SizedBox(height: AppSpacing.stackSm),
             Text(
               message,
               textAlign: TextAlign.center,
-              style: textTheme.bodyLarge?.copyWith(color: colors.onSurfaceVariant),
+              style: textTheme.bodyLarge?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: AppSpacing.stackMd),
             FilledButton.icon(
@@ -760,7 +817,9 @@ class _EmptyState extends StatelessWidget {
                 const SizedBox(height: AppSpacing.stackMd),
                 Text(
                   hasFilters ? 'No notes match your filters' : 'No notes found',
-                  style: textTheme.headlineMedium?.copyWith(color: colors.onSurface),
+                  style: textTheme.headlineMedium?.copyWith(
+                    color: colors.onSurface,
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.stackSm),
                 Text(
@@ -768,7 +827,9 @@ class _EmptyState extends StatelessWidget {
                       ? 'Try adjusting your search or filters.'
                       : 'We couldn\'t find anything matching your search.\nTry different keywords or broader tags.',
                   textAlign: TextAlign.center,
-                  style: textTheme.bodyLarge?.copyWith(color: colors.onSurfaceVariant),
+                  style: textTheme.bodyLarge?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.stackMd),
                 FilledButton(
@@ -780,7 +841,9 @@ class _EmptyState extends StatelessWidget {
                       borderRadius: BorderRadius.circular(AppRadius.full),
                     ),
                   ),
-                  child: Text(hasFilters ? 'Clear all filters' : 'Clear search'),
+                  child: Text(
+                    hasFilters ? 'Clear all filters' : 'Clear search',
+                  ),
                 ),
               ],
             ),
