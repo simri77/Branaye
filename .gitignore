@@ -15,7 +15,73 @@ node_modules/
 .env.production.local
 
 # Build outputs
+dist/# ===============================================================
+# Branaye — root .gitignore
+# Patterns here apply to the whole repo (backend + mobile).
+# ===============================================================
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Environment variables & secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+backend/.env
+backend/.env.*
+!backend/.env.example
+mobile/android/key.properties
+mobile/release/
+*.jks
+*.keystore
+
+# Build outputs
 dist/
+build/
+*.log
+
+# Logs
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing & coverage
+coverage/
+.nyc_output/
+
+# Docker local overrides
+docker-compose.override.yml
+
+# IDE & editor files
+.vscode/
+.idea/
+*.iml
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Agent & skill tooling (not part of the product)
+AGENTS.md
+.agents/
+.claude/
+.windsurf/
+skills-lock.json
+docs/
+
+# Local-only material (not part of the product)
+stitch_noteflow_mobile_app/
+.scratch/
+study/
+
 build/
 *.log
 
